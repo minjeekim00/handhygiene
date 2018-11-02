@@ -22,3 +22,13 @@ ex)
 
 target is 1 for clean(hand hygiene complied)
 target is 0 for not clean
+
+
+
+## Labeling data
+
+/your_data_dir
+  /images
+
+
+python add_label.py "your_data_dir" "excel_path" "csv_target_name" 
