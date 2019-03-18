@@ -1,0 +1,3 @@
+[submodule "src/kinetics-i3d"]
+	path = src/kinetics-i3d
+	url = https://github.com/minjeekim00/kinetics-i3d.git
