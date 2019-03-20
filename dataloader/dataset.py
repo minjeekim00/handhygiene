@@ -10,13 +10,22 @@ from tqdm import tqdm
 from glob import glob
 
 
+
+def has_file_allowed_extension(filename, extensions):
+    filename_lower = filename.lower()
+    return any(filename_lower.endswith(ext) for ext in extensions)
+
+def is_image_file(filename):
+    return has_file_allowed_extension(filename, IMG_EXTENSIONS)
+
+
 def make_dataset(dir, class_to_idx):
     fnames, labels = [], []
     lists = sorted(os.listdir(dir))
     
     for label in sorted(os.listdir(dir)):
         for fname in os.listdir(os.path.join(dir, label)):
-            if os.path.splitext(fname)[1] == '.npy':
+            if is_image_file(fname):
                 continue
             fnames.append(os.path.join(dir, label, fname))
             labels.append(label)
@@ -52,7 +61,7 @@ def pil_frame_loader(path):
     
     buffer = []
     for i, fname in enumerate(frames):
-        if os.path.splitext(fname)[1] == '.npy':
+        if not is_image_file(fname):
             continue
         with open(fname, 'rb') as f:
             img = Image.open(f)
@@ -83,8 +92,8 @@ def get_flow(dir):
     """
     basename = os.path.basename(dir)
     flow_dir = os.path.join(dir,'{}.npy'.format(basename))
-    #if os.path.exists(flow_dir):
-    #    return np.load(flow_dir)
+    if os.path.exists(flow_dir):
+        return np.load(flow_dir)
     
     print("processing optical flows..... this will take for a while....")
     frames = glob(os.path.join(dir, '*.jpg'))
@@ -124,13 +133,13 @@ def pil_flow_loader(dir):
     return buffer
 
 #########################################   
-
+IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', 'webp']
 
 class VideoDataset(data.Dataset):
     #def __init__(self, root, transform=None, target_transform=None,
     #             loader=default_loader):
         
-    def __init__(self, root, split='train', clip_len='16', transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
+    def __init__(self, root, split='train', clip_len=16, transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
 
         self.root = root
         self.loader = pil_frame_loader
@@ -139,8 +148,7 @@ class VideoDataset(data.Dataset):
         folder = os.path.join(self.image_dir, split)
         
         classes, class_to_idx = find_classes(folder)
-        samples = make_dataset(folder, class_to_idx) # [fnames, labels]
-        self.samples = samples
+        self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
         self.target_transform = target_transform
         self.clip_len = clip_len
@@ -150,11 +158,17 @@ class VideoDataset(data.Dataset):
 
     def __getitem__(self, index):
         # loading and preprocessing.
+        """
+            TODO: fix batch size ordering issue
+                  sampling 16 frames
+        """
         fnames, targets = self.samples[0][index], self.samples[1][index]
         frames = self.loader(fnames)
         flows = pil_flow_loader(fnames)
         
+        
         streams = (frames, flows)
+        
         if self.transform: ## applying torchvision transform
             _frames = []
             _flows = []
@@ -171,19 +185,36 @@ class VideoDataset(data.Dataset):
        
         if self.target_transform:
             targets = self.target_transform(targets)
-            
-        targets = torch.tensor(targets).unsqueeze(0)
         
+        frames, flows = self.clip_sampling((frames, flows), index)# sampling two streams   
+        targets = torch.tensor(targets).unsqueeze(0)
         return frames, flows, targets
-
     
-    def labels_to_idx(labels):
-        return {label: i for i, label in enumerate(sorted(set(labels)))}
-    
-    def to_one_hot(label):
+    def to_one_hot(self, label):
         to_one_hot = np.eye(2)
         return to_one_hot[int(label)]
+    
+    def clip_sampling(self, streams, index):
+        start = 0
+        frames = streams[0]
+        flows = streams[1]
+        if len(frames) != len(flows):
+            return print("number of frames {} and flows {} are different.".format(len(frames), len(flows)))
         
+        nframes = len(frames)
+        
+        clip_len = self.clip_len
+        if nframes > clip_len:
+            size = nframes-clip_len+1
+            start = np.random.choice(size, 1)[0]
+            print("start frame: {}".format(start))
+        elif nframes < clip_len: # drop a clip when its length is less than 16
+            return print("minimum {} frames are needed to process".format(clip_len))
+        frames = frames[start:]
+        flows = flows[start:]
+        
+        return (frames, flows)
+    
     def check_preprocess(self):
         # TODO: Check image size in image_dir
         if not os.path.exists(self.image_dir):
@@ -201,7 +232,9 @@ class VideoDataset(data.Dataset):
     
     def __len__(self):
         return len(self.samples[0]) # fnames
-
+    
+    def __getpath__(self, index):
+        return self.samples[0][index]
 
 
 if __name__ == "__main__":
