@@ -50,8 +50,10 @@ def pil_frame_loader(path):
     frames = sorted([os.path.join(path, img) for img in os.listdir(path)])
     
     buffer = []
-    for i, frame_name in enumerate(frames):
-        with open(frame_name, 'rb') as f:
+    for i, fname in enumerate(frames):
+        if os.path.splitext(fname)[1] == '.npy':
+            continue
+        with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
             buffer.append(img)
