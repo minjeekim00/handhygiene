@@ -23,7 +23,7 @@ def generate_gif_from_npy(npyfile):
         shape = image.shape
         image = image.astype(np.uint8)
         if shape[-1] == 2:
-            ch3 = np.zeros((shape[0], shape[1], 1), dtype=np.uint8)
+            ch3 = np.ones((shape[0], shape[1], 1), dtype=np.uint8)*128
             images.append(np.dstack((image, ch3)))
         else:
             images.append(image)
