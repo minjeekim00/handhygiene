@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image # to use torchivision transforms
 import cv2 # to do flow preprocessing 
 
+from tqdm import tqdm
 from glob import glob
 
 
@@ -75,11 +76,13 @@ def compute_TVL1(prev, curr, bound=15):
     return flow
    
 def get_flow(dir):
-    
+    """
+        return: (1, num_frames, 224, 224, 2) shape of array of .npy
+    """
     basename = os.path.basename(dir)
     flow_dir = os.path.join(dir,'{}.npy'.format(basename))
-    if os.path.exists(flow_dir):
-        return np.load(flow_dir)
+    #if os.path.exists(flow_dir):
+    #    return np.load(flow_dir)
     
     print("processing optical flows..... this will take for a while....")
     frames = glob(os.path.join(dir, '*.jpg'))
@@ -87,9 +90,11 @@ def get_flow(dir):
     
     flow = []
     prev = cv2.imread(frames[0])
+    prev = cv2.resize(prev, (224, 224))
     prev = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
-    for i, frame_curr in enumerate(frames):
+    for i, frame_curr in enumerate(tqdm(frames)):
         curr = cv2.imread(frame_curr)
+        curr = cv2.resize(curr, (224, 224))
         curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
         tmp_flow = compute_TVL1(prev, curr)
         flow.append(tmp_flow)
@@ -104,7 +109,7 @@ def pil_flow_loader(dir):
         return: list of PIL Images
     """
     flow = get_flow(dir)
-    
+   
     buffer = []
     for i, flw in enumerate(flow):
         shape = flw.shape
