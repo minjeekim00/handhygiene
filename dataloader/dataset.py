@@ -11,8 +11,12 @@ from glob import glob
 
 def make_dataset(dir, class_to_idx):
     fnames, labels = [], []
+    lists = sorted(os.listdir(dir))
+    
     for label in sorted(os.listdir(dir)):
         for fname in os.listdir(os.path.join(dir, label)):
+            if os.path.splitext(fname)[1] == '.npy':
+                continue
             fnames.append(os.path.join(dir, label, fname))
             labels.append(label)
             
@@ -25,10 +29,10 @@ def make_dataset(dir, class_to_idx):
 def labels_to_idx(labels):
     
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    if len(set(labels)) == 2:
-        return np.array([np.eye(2)[int(labels_dict[label])] for label in labels])
-    else:
-        return np.array([labels_dict[label] for label in labels], dtype=int)
+    #if len(set(labels)) == 2:
+    #    return np.array([np.eye(2)[int(labels_dict[label])] for label in labels])
+    #else:
+    return np.array([labels_dict[label] for label in labels], dtype=int)
 
 def find_classes(dir):
     """
@@ -72,11 +76,12 @@ def compute_TVL1(prev, curr, bound=15):
    
 def get_flow(dir):
     
-    flow_dir = os.path.join(dir, dir+'.npy')
+    basename = os.path.basename(dir)
+    flow_dir = os.path.join(dir,'{}.npy'.format(basename))
     if os.path.exists(flow_dir):
         return np.load(flow_dir)
     
-    print("processing for optical flow..... this will take for a while....")
+    print("processing optical flows..... this will take for a while....")
     frames = glob(os.path.join(dir, '*.jpg'))
     frames.sort()
     
@@ -150,6 +155,8 @@ class VideoDataset(data.Dataset):
                 frame = self.transform(frame)
                 _frames.append(frame)
             for flow in flows:
+                ### TODO: flow should be from [-20, 20] to [-1, 1]
+                # but for now [0, 255] to [-1, 1] for easy implement
                 flow = self.transform(flow) 
                 _flows.append(flow[:,:,:-1]) # exclude temp channel 3
             frames = _frames
@@ -157,11 +164,9 @@ class VideoDataset(data.Dataset):
        
         if self.target_transform:
             targets = self.target_transform(targets)
-        #labels = np.array(self.label_array[index])
-        #labels = np.expand_dims(np.array(self.label_array[index]), 1)
+            
+        targets = torch.tensor(targets).unsqueeze(0)
         
-        frames = torch.stack(frames)
-        flows = torch.stack(flows)
         return frames, flows, targets
 
     
