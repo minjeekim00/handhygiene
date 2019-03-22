@@ -139,7 +139,7 @@ class VideoDataset(data.Dataset):
     #def __init__(self, root, transform=None, target_transform=None,
     #             loader=default_loader):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
+    def __init__(self, root, split='train', clip_len=16, transform=None, temporal_transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
 
         self.root = root
         self.loader = pil_frame_loader
@@ -150,6 +150,7 @@ class VideoDataset(data.Dataset):
         classes, class_to_idx = find_classes(folder)
         self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
+        self.temporal_transform = temporal_transform
         self.target_transform = target_transform
         self.clip_len = clip_len
 
@@ -166,9 +167,11 @@ class VideoDataset(data.Dataset):
         frames = self.loader(fnames)
         flows = pil_flow_loader(fnames)
         
-        
         streams = (frames, flows)
         
+        if self.temporal_transform:
+            streams, targets = self.temporal_transform(streams, targets)
+            
         if self.transform: ## applying torchvision transform
             _frames = []
             _flows = []
@@ -179,15 +182,16 @@ class VideoDataset(data.Dataset):
                 ### TODO: flow should be from [-20, 20] to [-1, 1]
                 # but for now [0, 255] to [-1, 1] for easy implement
                 flow = self.transform(flow) 
-                _flows.append(flow[:,:,:-1]) # exclude temp channel 3
+                _flows.append(flow[:-1,:,:]) # exclude temp channel 3
             frames = _frames
             flows = _flows
        
         if self.target_transform:
             targets = self.target_transform(targets)
         
-        frames, flows = self.clip_sampling((frames, flows), index)# sampling two streams   
+        #frames, flows = self.clip_sampling((frames, flows), index)# sampling two streams   
         targets = torch.tensor(targets).unsqueeze(0)
+        
         return frames, flows, targets
     
     def to_one_hot(self, label):
@@ -195,25 +199,46 @@ class VideoDataset(data.Dataset):
         return to_one_hot[int(label)]
     
     def clip_sampling(self, streams, index):
+        frames, flows = streams
+        clip_len = self.clip_len
         start = 0
-        frames = streams[0]
-        flows = streams[1]
         if len(frames) != len(flows):
+            print(self.__getpath__(index))
             return print("number of frames {} and flows {} are different.".format(len(frames), len(flows)))
         
         nframes = len(frames)
-        
-        clip_len = self.clip_len
         if nframes > clip_len:
             size = nframes-clip_len+1
             start = np.random.choice(size, 1)[0]
-            print("start frame: {}".format(start))
         elif nframes < clip_len: # drop a clip when its length is less than 16
+            print(self.__getpath__(index))
             return print("minimum {} frames are needed to process".format(clip_len))
         frames = frames[start:]
         flows = flows[start:]
         
         return (frames, flows)
+    
+    def temporal_augmentation(self, streams, targets):
+        frames, flows = streams
+        clip_len = self.clip_len
+        start = 0
+        
+        if len(frames) != len(flows):
+            print(self.__getpath__(index))
+            return print("number of frames {} and flows {} are different.".format(len(frames), len(flows)))
+        
+        nframes = len(frames)
+        frames_ag = torch.empty(nframes, 4, 5)
+        if nframes > clip_len:
+            size = nframes-clip_len+1
+            start = np.random.choice(size, 1)[0]
+        elif nframes < clip_len: # drop a clip when its length is less than 16
+            print(self.__getpath__(index))
+            return print("minimum {} frames are needed to process".format(clip_len))
+        frames = frames[start:]
+        flows = flows[start:]
+        
+        return frames, flows, targets
     
     def check_preprocess(self):
         # TODO: Check image size in image_dir

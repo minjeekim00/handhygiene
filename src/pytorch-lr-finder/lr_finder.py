@@ -32,10 +32,11 @@ class LRFinder(object):
 
     """
 
-    def __init__(self, model, optimizer, criterion, device=None):
+    def __init__(self, model, optimizer, criterion, modality, device=None):
         self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
+        self.modality = modality
         self.history = {"lr": [], "loss": []}
         self.best_loss = None
 
@@ -111,11 +112,17 @@ class LRFinder(object):
         for iteration in tqdm(range(num_iter)):
             # Get a new set of inputs and labels
             try:
-                inputs, _, labels = next(iterator)
+                if self.modality == 'rgb':
+                    inputs, _, labels = next(iterator)
+                elif self.modality == 'flow':
+                    _, inputs, labels = next(iterator)
             except StopIteration:
                 iterator = iter(train_loader)
-                inputs, _, labels = next(iterator)
-
+                if self.modality == 'rgb':
+                    inputs, _, labels = next(iterator)
+                elif self.modality == 'flow':
+                     _, inputs, labels = next(iterator)
+                    
             # Train on batch and retrieve loss
             loss = self._train_batch(inputs, labels)
             if val_loader:
@@ -147,13 +154,15 @@ class LRFinder(object):
         self.model.train()
 
         # Move data to the correct device
-        inputs = torch.stack(inputs).to(self.device)
-        labels = torch.stack(labels).to(self.device)
-
+        inputs = torch.stack([i.clone().detach() for i in inputs])
+        inputs = inputs.transpose(0, 1).transpose(1, 2).to(self.device)
+        labels = labels.to(self.device)
+        
         # Forward pass
         self.optimizer.zero_grad()
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, labels)
+        _, outputs = self.model(inputs)
+        softmaxs = torch.nn.functional.softmax(outputs, 1)
+        loss = self.criterion(softmaxs, labels.view(-1).to(self.device))
 
         # Backward pass
         loss.backward()
