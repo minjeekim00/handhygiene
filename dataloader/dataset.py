@@ -91,6 +91,17 @@ def get_flow(dir):
         return: (1, num_frames, 224, 224, 2) shape of array of .npy
     """
     basename = os.path.basename(dir)
+    if len(basename.split('_')) > 3:
+        start = basename.split('_')[-1]
+        currbasename = basename.rsplit('_', 1)[0]
+        currdir = dir.rsplit('/', 1)[0]
+        flow_dir = os.path.join(currdir, currbasename, '{}.npy'.format(currbasename))
+        if os.path.exists(flow_dir):
+            flows = np.load(flow_dir)
+            return flows[int(start):]
+        #else:
+            ## TODO: when base npy not exists
+      
     flow_dir = os.path.join(dir,'{}.npy'.format(basename))
     if os.path.exists(flow_dir):
         return np.load(flow_dir)
