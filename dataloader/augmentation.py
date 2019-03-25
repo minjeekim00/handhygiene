@@ -72,12 +72,14 @@ class AugmentDataset():
     def __generate_temporal_augmentation__(self, index):
         dirname = self.samples[0][index]
         if len(dirname.split('_')) > 3:
-            continue
+            return
+        #if '/notclean/' in dirname:
+        #    return
         list_frames = img_path_loader(dirname)
         nframes = len(list_frames)
         clip_len = self.clip_len
         
-        print("in {}, {} images found".format(dirname, nframes))
+        #print("in {}, {} images found".format(dirname, nframes))
         
         from PIL import Image
         with open(list_frames[0], 'rb') as f:
@@ -90,7 +92,7 @@ class AugmentDataset():
         if nframes > clip_len:
             size = nframes-clip_len+1
             choices = np.random.choice(size, int(size/2), replace=False)
-            print("choices: {}".format(choices))
+            #print("choices: {}".format(choices))
             for ch in choices:
                 if ch == 0:
                     continue
@@ -107,8 +109,6 @@ class AugmentDataset():
     def __len__(self):
         return len(self.samples[0]) # fnames
    
-
-
     
     
 if __name__ == "__main__":

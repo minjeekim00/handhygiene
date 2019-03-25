@@ -1,5 +1,6 @@
 import torch
 import torch.utils.data as data
+import torch.nn.functional as F
 
 import os
 import numpy as np
@@ -39,10 +40,10 @@ def make_dataset(dir, class_to_idx):
 def labels_to_idx(labels):
     
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    #if len(set(labels)) == 2:
-    #    return np.array([np.eye(2)[int(labels_dict[label])] for label in labels])
-    #else:
-    return np.array([labels_dict[label] for label in labels], dtype=int)
+    if len(set(labels)) == 2:
+        return np.array([np.eye(2)[int(labels_dict[label])] for label in labels])
+    else:
+        return np.array([labels_dict[label] for label in labels], dtype=int)
 
 def find_classes(dir):
     """
@@ -150,7 +151,7 @@ class VideoDataset(data.Dataset):
     #def __init__(self, root, transform=None, target_transform=None,
     #             loader=default_loader):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, temporal_transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
+    def __init__(self, root, split='train', clip_len=16, transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
 
         self.root = root
         self.loader = pil_frame_loader
@@ -161,7 +162,6 @@ class VideoDataset(data.Dataset):
         classes, class_to_idx = find_classes(folder)
         self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
-        self.temporal_transform = temporal_transform
         self.target_transform = target_transform
         self.clip_len = clip_len
 
@@ -179,9 +179,6 @@ class VideoDataset(data.Dataset):
         flows = pil_flow_loader(fnames)
         
         streams = (frames, flows)
-        
-        if self.temporal_transform:
-            streams, targets = self.temporal_transform(streams, targets)
             
         if self.transform: ## applying torchvision transform
             _frames = []
@@ -200,7 +197,8 @@ class VideoDataset(data.Dataset):
         if self.target_transform:
             targets = self.target_transform(targets)
         
-        #frames, flows = self.clip_sampling((frames, flows), index)# sampling two streams   
+        ## temporal transform
+        frames, flows = self.temporal_transform((frames, flows), index)
         targets = torch.tensor(targets).unsqueeze(0)
         
         return frames, flows, targets
@@ -208,6 +206,29 @@ class VideoDataset(data.Dataset):
     def to_one_hot(self, label):
         to_one_hot = np.eye(2)
         return to_one_hot[int(label)]
+    
+    def temporal_transform(self, streams, index):
+        """
+            all clip length resize to 16
+        """
+        frames, flows = streams
+        clip_len = self.clip_len
+        nframes = len(frames)
+        if nframes == clip_len:
+            return streams
+        
+        frames = self.clip_interpolation(frames)
+        flows = self.clip_interpolation(flows)
+        return (frames, flows)
+    
+    def clip_interpolation(self, images):
+        images = torch.stack(images)
+        images = images.transpose(0, 1).unsqueeze(0)
+        #`mini-batch x channels x [optional depth] x [optional height] x width`.
+        images = F.interpolate(images, size=(self.clip_len, 224, 224), 
+                               mode='trilinear', align_corners=True)
+        images = images.squeeze().transpose(0, 1)
+        return images
     
     def clip_sampling(self, streams, index):
         frames, flows = streams
