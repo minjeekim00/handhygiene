@@ -41,7 +41,7 @@ def labels_to_idx(labels):
     
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
     if len(set(labels)) == 2:
-        return np.array([np.eye(2)[int(labels_dict[label])] for label in labels])
+        return np.array([np.eye(2)[int(labels_dict[label])] for label in labels], dtype=np.float32)
     else:
         return np.array([labels_dict[label] for label in labels], dtype=int)
 
@@ -151,7 +151,7 @@ class VideoDataset(data.Dataset):
     #def __init__(self, root, transform=None, target_transform=None,
     #             loader=default_loader):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, target_transform=None, preprocess=False, loader=pil_frame_loader):
+    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, loader=pil_frame_loader):
 
         self.root = root
         self.loader = pil_frame_loader
@@ -160,9 +160,9 @@ class VideoDataset(data.Dataset):
         folder = os.path.join(self.image_dir, split)
         
         classes, class_to_idx = find_classes(folder)
+        self.classes = classes
         self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
-        self.target_transform = target_transform
         self.clip_len = clip_len
 
         if preprocess:
@@ -194,12 +194,12 @@ class VideoDataset(data.Dataset):
             frames = _frames
             flows = _flows
        
-        if self.target_transform:
-            targets = self.target_transform(targets)
+        # target transform
+        if len(targets) != 2:
+            targets = torch.tensor(targets).unsqueeze(0)
         
         ## temporal transform
         frames, flows = self.temporal_transform((frames, flows), index)
-        targets = torch.tensor(targets).unsqueeze(0)
         
         return frames, flows, targets
     
@@ -215,7 +215,9 @@ class VideoDataset(data.Dataset):
         clip_len = self.clip_len
         nframes = len(frames)
         if nframes == clip_len:
-            return streams
+            frames = torch.stack(frames)
+            flows = torch.stack(flows)
+            return (frames, flows)
         
         frames = self.clip_interpolation(frames)
         flows = self.clip_interpolation(flows)
@@ -251,6 +253,9 @@ class VideoDataset(data.Dataset):
         return (frames, flows)
     
     def temporal_augmentation(self, streams, targets):
+        """
+            TODO: Random Horizontal Filp
+        """
         frames, flows = streams
         clip_len = self.clip_len
         start = 0
