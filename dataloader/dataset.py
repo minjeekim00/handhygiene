@@ -40,10 +40,10 @@ def make_dataset(dir, class_to_idx):
 def labels_to_idx(labels):
     
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    if len(set(labels)) == 2:
-        return np.array([np.eye(2)[int(labels_dict[label])] for label in labels], dtype=np.float32)
-    else:
-        return np.array([labels_dict[label] for label in labels], dtype=int)
+    #if len(set(labels)) == 2:
+    #    return np.array([np.eye(2)[int(labels_dict[label])] for label in labels], dtype=np.float32)
+    #else:
+    return np.array([labels_dict[label] for label in labels], dtype=int)
 
 def find_classes(dir):
     """
@@ -92,7 +92,7 @@ def get_flow(dir):
         return: (1, num_frames, 224, 224, 2) shape of array of .npy
     """
     basename = os.path.basename(dir)
-    if len(basename.split('_')) > 3:
+    if len(basename.split('_')) > 3: # when temporal sampling
         start = basename.split('_')[-1]
         currbasename = basename.rsplit('_', 1)[0]
         currdir = dir.rsplit('/', 1)[0]
@@ -195,8 +195,8 @@ class VideoDataset(data.Dataset):
             flows = _flows
        
         # target transform
-        if len(targets) != 2:
-            targets = torch.tensor(targets).unsqueeze(0)
+        #if len(targets) != 2:
+        targets = torch.tensor(targets).unsqueeze(0)
         
         ## temporal transform
         frames, flows = self.temporal_transform((frames, flows), index)
@@ -214,9 +214,11 @@ class VideoDataset(data.Dataset):
         frames, flows = streams
         clip_len = self.clip_len
         nframes = len(frames)
+        
         if nframes == clip_len:
-            frames = torch.stack(frames)
-            flows = torch.stack(flows)
+            frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
+            flows = torch.stack(flows).transpose(0, 1)
+            #print(frames.shape, flows.shape, index)
             return (frames, flows)
         
         frames = self.clip_interpolation(frames)
@@ -224,12 +226,14 @@ class VideoDataset(data.Dataset):
         return (frames, flows)
     
     def clip_interpolation(self, images):
+        ## TODO: tensor ordering
         images = torch.stack(images)
-        images = images.transpose(0, 1).unsqueeze(0)
+        shape = images.shape
+        images = images.transpose(0, 1).unsqueeze(0) #DCHW --> BCDHW
         #`mini-batch x channels x [optional depth] x [optional height] x width`.
         images = F.interpolate(images, size=(self.clip_len, 224, 224), 
                                mode='trilinear', align_corners=True)
-        images = images.squeeze().transpose(0, 1)
+        images = images.view(self.clip_len, shape[1], shape[2], shape[3]).transpose(0, 1) #BCDHW --> CDHW
         return images
     
     def clip_sampling(self, streams, index):
@@ -251,31 +255,6 @@ class VideoDataset(data.Dataset):
         flows = flows[start:]
         
         return (frames, flows)
-    
-    def temporal_augmentation(self, streams, targets):
-        """
-            TODO: Random Horizontal Filp
-        """
-        frames, flows = streams
-        clip_len = self.clip_len
-        start = 0
-        
-        if len(frames) != len(flows):
-            print(self.__getpath__(index))
-            return print("number of frames {} and flows {} are different.".format(len(frames), len(flows)))
-        
-        nframes = len(frames)
-        frames_ag = torch.empty(nframes, 4, 5)
-        if nframes > clip_len:
-            size = nframes-clip_len+1
-            start = np.random.choice(size, 1)[0]
-        elif nframes < clip_len: # drop a clip when its length is less than 16
-            print(self.__getpath__(index))
-            return print("minimum {} frames are needed to process".format(clip_len))
-        frames = frames[start:]
-        flows = flows[start:]
-        
-        return frames, flows, targets
     
     def check_preprocess(self):
         # TODO: Check image size in image_dir
