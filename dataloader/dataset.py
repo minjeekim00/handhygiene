@@ -44,7 +44,6 @@ def labels_to_idx(labels):
     #    return np.array([np.eye(2)[int(labels_dict[label])] for label in labels], dtype=np.float32)
     #else:
     return np.array([labels_dict[label] for label in labels], dtype=int)
-
 def find_classes(dir):
     """
        returns classes, class_to_idx
@@ -93,13 +92,13 @@ def get_flow(dir):
     """
     basename = os.path.basename(dir)
     if len(basename.split('_')) > 3: # when temporal sampling
-        start = basename.split('_')[-1]
+        start = int(basename.split('_')[-1])
         currbasename = basename.rsplit('_', 1)[0]
         currdir = dir.rsplit('/', 1)[0]
         flow_dir = os.path.join(currdir, currbasename, '{}.npy'.format(currbasename))
         if os.path.exists(flow_dir):
             flows = np.load(flow_dir)
-            return flows[int(start):]
+            return flows[start:start+16] ## clip_len
         #else:
             ## TODO: when base npy not exists
       
@@ -220,23 +219,61 @@ class VideoDataset(data.Dataset):
             flows = torch.stack(flows).transpose(0, 1)
             #print(frames.shape, flows.shape, index)
             return (frames, flows)
+        elif nframes < clip_len:
+            return self.clip_looping(streams, index)
         
-        frames = self.clip_interpolation(frames)
-        flows = self.clip_interpolation(flows)
-        return (frames, flows)
+        elif nframes > clip_len:
+            return self.clip_sampling(streams, index)
+        
+        else:
+            #frames = self.clip_speed_changer(frames)
+            #flows = self.clip_speed_changer(flows)
+            return (frames, flows)
     
-    def clip_interpolation(self, images):
+    def clip_looping(self, streams, index):
+        """
+            Loop a clip as many times as necessary to satisfy input size
+            input shape: DxCxHxW
+            return shape: CxDxHxW
+        """
+        frames, flows = streams
+        clip_len = self.clip_len
+        nframes = len(frames)
+        
+        niters = int(clip_len/nframes)+1
+        frames = frames*niters
+        frames = frames[:clip_len]
+        flows = flows*niters
+        flows = flows[:clip_len]
+        frames = torch.stack(frames).transpose(0, 1)
+        flows = torch.stack(flows).transpose(0, 1)
+        
+        return (frames, flows)
+        
+    def clip_speed_changer(self, images):
+        """
+            Interpolate clip size with length of `self.clip_len`
+            ex) 25 --> 16
+            input shape: DxCxHxW
+            return shape: CxDxHxW
+        """
         ## TODO: tensor ordering
         images = torch.stack(images)
-        shape = images.shape
+        shape = images.shape # DCHW
         images = images.transpose(0, 1).unsqueeze(0) #DCHW --> BCDHW
         #`mini-batch x channels x [optional depth] x [optional height] x width`.
         images = F.interpolate(images, size=(self.clip_len, 224, 224), 
                                mode='trilinear', align_corners=True)
-        images = images.view(self.clip_len, shape[1], shape[2], shape[3]).transpose(0, 1) #BCDHW --> CDHW
-        return images
+        images = images.view(shape[1], self.clip_len, shape[2], shape[3]) #squeeze
+        return images #CDHW
     
     def clip_sampling(self, streams, index):
+        """
+            Sample clip with random start number.
+            The length of sampled clip should be same with `self.clip_len`
+            input shape: DxCxHxW
+            return shape: CxDxHxW
+        """
         frames, flows = streams
         clip_len = self.clip_len
         start = 0
@@ -251,9 +288,9 @@ class VideoDataset(data.Dataset):
         elif nframes < clip_len: # drop a clip when its length is less than 16
             print(self.__getpath__(index))
             return print("minimum {} frames are needed to process".format(clip_len))
-        frames = frames[start:]
-        flows = flows[start:]
         
+        frames = torch.stack(frames[start:start+clip_len]).transpose(0, 1)
+        flows = torch.stack(flows[start:start+clip_len]).transpose(0, 1)
         return (frames, flows)
     
     def check_preprocess(self):
