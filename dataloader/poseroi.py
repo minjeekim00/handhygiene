@@ -123,35 +123,27 @@ def calc_margin(torso, track_window):
     return (x, y, w, h)
 
 
-def crop_by_clip(streams, crop_coords, dir):
+def crop_by_clip(images, coords, mode='rgb'):
     """
         rbgs: type: PIL.Image
-        crop_coords: (num, (x, y, w, h))
+        coords: (num, (x, y, w, h))
     """
     
-    rgbs = streams[0]
-    flows = streams[1]
-    
-    ws = np.array(crop_coords).T[2]
-    hs = np.array(crop_coords).T[3]
+    ws = np.array(coords).T[2]
+    hs = np.array(coords).T[3]
     
     max_w, max_w_idx = np.max(ws), np.argmax(ws)
     max_h, max_h_idx = np.max(hs), np.argmax(hs)
-
-    imgname = os.path.basename(dir)
-    paths = sorted(glob(os.path.join(dir, '*.jpg')))
-    names = [os.path.basename(path) for path in paths]
     
-    rgb_cropped = []
-    flow_cropped = []
+    cropped = []
     
-    for i, track_window in enumerate(tqdm(crop_coords)):
+    for i, track_window in enumerate(tqdm(coords)):
         ## extra margin by max_w, max_h
         x, y, w, h = track_window
         
         if w == 0 and h == 0:
             # bring the first element having w, h
-            x, y, w, h = [t for t in crop_coords if t[2] != 0 and t[3] != 0][0]
+            x, y, w, h = [t for t in coords if t[2] != 0 and t[3] != 0][0]
         
         x_m = int((max_w-w)/2)
         y_m = int((max_h-h)/2)
@@ -160,39 +152,31 @@ def crop_by_clip(streams, crop_coords, dir):
         #left = x if x>0 else 0
         #upper = y if y>0 else 0
         
-        rgb = rgbs[i].crop((x, y, (x+w), (y+h)))
-        flow = flows[i].crop((x, y, (x+w), (y+h)))
+        img = images[i].crop((x, y, (x+w), (y+h)))
         
-        shape_w, shape_h = rgbs[i].size
+        shape_w, shape_h = images[i].size
         # mean padding
         if x < 0:
-            rgb = np.array(rgb)
-            flow = np.array(flow)
+            img = np.array(img)
             value = np.abs(x)
-            means = [np.mean(rgb[:,value:,c]) for c in range(3)]
+            
+            means = [np.mean(img[:,value:,c]) for c in range(3)]
             for i in range(3):
-                rgb[:,:value,i]=means[i]
-                flow[:,:value,i]= float(255/2)
-            rgb = Image.fromarray(rgb)
-            flow = Image.fromarray(flow)
-        # TODOs:
+                img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
+            img = Image.fromarray(img)
+            
         elif x+w > shape_w: 
-            rgb = np.array(rgb)
-            flow = np.array(flow)
+            img = np.array(img)
             value = x+w-shape_w
-            means = [np.mean(rgb[:,:-1*value,c]) for c in range(3)]
+            
+            means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
             for i in range(3):
-                rgb[:,-1*value:,i]=means[i]
-                flow[:,-1*value:,i]= float(255/2)
-            rgb = Image.fromarray(rgb)
-            flow = Image.fromarray(flow)
+                img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
+            img = Image.fromarray(img)
             
         # if y < 0, if x > 224, y > 224
-        
-        rgb_cropped.append(rgb)
-        flow_cropped.append(flow)
-    
-    return rgb_cropped, flow_cropped
+        cropped.append(img)
+    return cropped
         
 
 

@@ -18,44 +18,152 @@ from .poseroi import calc_margin
 from .poseroi import crop_by_clip
 
 
-def default_loader(dir):
+def make_dataset(dir, class_to_idx):
+    """
+        fnames: name of directory containing images
+        coords: dict containg people, torso coordinates
+        labels: class
+    """
+    fnames, coords, labels = [], [], []
     
-    rgbs = pil_frame_loader(dir)
-    flows = pil_flow_loader(dir)
-    return rgbs, flows
+    exclusions = [
+     '5_20181119_frames029980',
+     '8_20181122_frames001281',
+     '18_20181204_frames006385',
+     '38_20190119_frames000270',
+     '38_20190119_frames000382',
+     '38_20190119_frames000643',
+     '38_20190119_frames000905',
+     '38_20190119_frames001529',
+     '38_20190119_frames001600',
+     '38_20190119_frames001633',
+     '38_20190119_frames001746',
+     '38_20190119_frames002412',
+     '38_20190119_frames002615',
+     '38_20190119_frames002739', # lack of boxes
+     '38_20190119_frames002913',
+     '38_20190119_frames003847',
+     '38_20190119_frames004411',
+     '38_20190119_frames005471',
+     '38_20190119_frames006438',
+     '38_20190119_frames006587']
+    
+    keypoint = '/data/private/minjee-video/handhygiene/data/keypoints.txt'
+    df=pd.read_csv('/data/private/minjee-video/handhygiene/data/label.csv')
+    
+    # target 있는 imgpath만 선별
+    df = df[df['targets'].notnull()]
+    lists = df['imgpath'].values
+    
+    with open(keypoint, 'r') as file:
+        data = json.load(file)
+        data = data['coord']
+        for fname in os.listdir(os.path.join(dir)):
+            if is_image_file(fname):
+                continue
+            if fname not in lists:
+                continue
+            if fname in exclusions:
+                continue
             
+            item = [d for d in data if d['imgpath']==fname][0]
+            people = item['people']
+            torso = item['torso']
+            npeople = len(item['people'])
+            
+            tidxs = df[df['imgpath']==fname]['targets'].values[0] # target idx
+            tidxs = [int(t) for t in tidxs.strip().split(',')]
+            nidxs = list(range(npeople))
+            nidxs = [n for n in nidxs if n not in tidxs]
+            
+            ## appending clean
+            for tidx in tidxs:
+                fnames.append(os.path.join(dir, fname))
+                coords.append({'people':people[tidx], 
+                               'torso':torso[tidx]})
+                labels.append('clean')
+        
+            ## appending notclean 
+            if len(nidxs) > 0:
+                nidx = int(nidxs[0])
+                fnames.append(os.path.join(dir, fname))
+                coords.append({'people':people[nidx], 
+                               'torso':torso[nidx]})
+                labels.append('notclean')
     
-def pil_frame_loader(path):
+    #assert len(labels) == len(fnames)
+    print('Number of {} people: {:d}'.format(dir, len(fnames)))
+    targets = labels_to_idx(labels)
+    
+    return [fnames, coords, targets]
+
+
+def default_loader(dir, coords):
+    
+    rgbs = pil_frame_loader(dir, coords)
+    flows = pil_flow_loader(dir, coords)
+    return rgbs, flows
+ 
+def crop_pil_image(coords, idx):
+    
+    people = coords['people']
+    torso = coords['torso']
+    
+    try:
+        window = people[idx]
+        if window is not None:
+            window = calc_margin(torso, window)
+        else:
+            window = (0, 0, 0, 0)
+    except:
+        print("{} fail to calculate margin".format(idx))
+        window = None
+        
+    return window
+
+
+def pil_frame_loader(dir, coords):
     """
         return: list of PIL Images
     """
-    frames = sorted([os.path.join(path, img) for img in os.listdir(path)])
-    
+    frames = sorted([os.path.join(dir, img) for img in os.listdir(dir)])
+    frames = [fname for fname in frames if is_image_file(fname)]
     buffer = []
+    cropped = [] # coordinates
     for i, fname in enumerate(frames):
-        if not is_image_file(fname):
-            continue
+        # calc margin
+        window = crop_pil_image(coords, i)
+        cropped.append(window)
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            buffer.append(img)   
+            buffer.append(img)
+    
+    buffer = crop_by_clip(buffer, cropped)
     return buffer
 
-def pil_flow_loader(dir):
+def pil_flow_loader(dir, coords):
     """
         return: list of PIL Images
     """
     flow = get_flow(dir)
    
     buffer = []
+    cropped = [] # coordinates
     for i, flw in enumerate(flow):
+        window = crop_pil_image(coords, i)
+        cropped.append(window)
+        
         shape = flw.shape
         # to make extra 3 channel to use torchvision transform
         tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
         img = np.dstack((flw.astype(np.uint8), tmp))
         img = Image.fromarray(img)
         buffer.append(img)
+    
+    buffer = crop_by_clip(buffer, cropped, 'flow')
     return buffer
+
 
 class VideoDataset(data.Dataset):
         
@@ -84,10 +192,11 @@ class VideoDataset(data.Dataset):
             TODO: clean up batch size ordering
             sampling 16 frames
         """
-        fnames, targets = self.samples[0][index], self.samples[1][index]
-        frames, flows = self.loader(fnames)
+        fnames = self.samples[0][index]
+        coords = self.samples[1][index]
+        targets = self.samples[2][index]
         
-        frames, flows = self.crop_roi((frames, flows), index)
+        frames, flows = self.loader(fnames, coords)
         
         if self.transform: ## applying torchvision transform
             _frames = []
@@ -110,45 +219,6 @@ class VideoDataset(data.Dataset):
         frames, flows = self.temporal_transform((frames, flows), index)
         return frames, flows, targets
     
-    def crop_roi(self, streams, index):
-        
-        path_keyp = '/data/private/minjee-video/handhygiene/data/keypoints.txt'
-        df_keyp=pd.read_csv('/data/private/minjee-video/handhygiene/data/keypoints.csv')
-        imgpath = self.__getpath__(index)
-        
-        rgbs = streams[0]
-        flows = streams[1]
-        
-        with open(path_keyp, 'r') as file:
-            data = json.load(file)
-            data = data['coord']
-            for i, row in enumerate(df_keyp.values):
-                targets = row[2]
-                if targets is np.nan: continue
-                idx = int(targets.split(',')[0])
-                imgname = data[i]['imgpath']
-                people = data[i]['people']
-                torso = data[i]['torso']
-                
-                if imgname == os.path.basename(imgpath):
-                    target_coord = people[idx]
-                    target_torso = torso[idx]
-                    crop_coords = []
-                    
-                    for j, rgb in enumerate(rgbs[:]):
-                        try:
-                            target_window = (target_coord[j])
-                            if target_window is not None:
-                                target_window = calc_margin(torso, target_window)
-                                crop_coords.append(target_window)
-                            else:
-                                target_window = (0, 0, 0, 0)
-                                crop_coords.append(target_window)
-                        except:
-                            print(imgpath)
-                            continue
-                    cropped = crop_by_clip((rgbs, flows), crop_coords, imgpath)
-        return cropped
     
     def to_one_hot(self, label):
         to_one_hot = np.eye(2)
