@@ -94,10 +94,10 @@ def make_dataset(dir, class_to_idx):
     
     return [fnames, coords, targets]
 
-def default_loader(dir, coords, num_workers):
+def default_loader(dir, coords):
     
     rgbs = pil_frame_loader(dir, coords)
-    flows = pil_flow_loader(dir, coords, num_workers)
+    flows = pil_flow_loader(dir, coords)
     return rgbs, flows
  
 def crop_pil_image(coords, idx):
@@ -138,7 +138,7 @@ def pil_frame_loader(dir, coords):
     buffer = crop_by_clip(buffer, cropped)
     return buffer
 
-def pil_flow_loader(dir, coords, num_workers):
+def pil_flow_loader(dir, coords):
     """
         return: list of PIL Images
     """
@@ -178,10 +178,9 @@ class VideoDataset(data.Dataset):
         self.transform = transform
         self.clip_len = clip_len
         self.use_keypoints = use_keypoints
-        self.num_workers = num_workers
 
         if preprocess:
-            self.preprocess()
+            self.preprocess(num_workers)
 
     def __getitem__(self, index):
         # loading and preprocessing.
@@ -193,7 +192,7 @@ class VideoDataset(data.Dataset):
         coords = self.samples[1][index]
         targets = self.samples[2][index]
         
-        frames, flows = self.loader(fnames, coords, self.num_workers)
+        frames, flows = self.loader(fnames, coords)
         
         if self.transform: ## applying torchvision transform
             _frames = []
@@ -322,10 +321,11 @@ class VideoDataset(data.Dataset):
         return True
     
     
-    def preprocess(self):
-        from sklearn.model_selection import train_test_split
-        #### TODO: split train test 
-        print('Preprocessing finished.')
+    def preprocess(self, num_workers):
+        paths = [self.__getpath__(i) for i in range(self.__len__())]
+        pool = Pool(num_workers)
+        pool.map(get_flow, paths)
+        return
 
     
     def __len__(self):

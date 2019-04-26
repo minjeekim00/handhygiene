@@ -17,9 +17,10 @@ from .opticalflow import get_flow
 from .poseroi import calc_margin
 from .poseroi import crop_by_clip
 
+from multiprocessing import Pool
+
 
 def default_loader(dir):
-    
     rgbs = pil_frame_loader(dir)
     flows = pil_flow_loader(dir)
     return rgbs, flows
@@ -59,8 +60,8 @@ def pil_flow_loader(dir):
 
 class VideoDataset(data.Dataset):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, 
-                 use_keypoints=False, loader=default_loader):
+    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False,
+                 loader=default_loader, num_workers=1):
 
         self.root = root
         self.loader = loader
@@ -73,10 +74,10 @@ class VideoDataset(data.Dataset):
         self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
         self.clip_len = clip_len
-        self.use_keypoints = use_keypoints
+        self.num_workers = num_workers
 
         if preprocess:
-            self.preprocess()
+            self.preprocess(num_workers)
 
     def __getitem__(self, index):
         # loading and preprocessing.
@@ -86,8 +87,6 @@ class VideoDataset(data.Dataset):
         """
         fnames, targets = self.samples[0][index], self.samples[1][index]
         frames, flows = self.loader(fnames)
-        
-        frames, flows = self.crop_roi((frames, flows), index)
         
         if self.transform: ## applying torchvision transform
             _frames = []
@@ -109,46 +108,6 @@ class VideoDataset(data.Dataset):
         ## temporal transform
         frames, flows = self.temporal_transform((frames, flows), index)
         return frames, flows, targets
-    
-    def crop_roi(self, streams, index):
-        
-        path_keyp = '/data/private/minjee-video/handhygiene/data/keypoints.txt'
-        df_keyp=pd.read_csv('/data/private/minjee-video/handhygiene/data/keypoints.csv')
-        imgpath = self.__getpath__(index)
-        
-        rgbs = streams[0]
-        flows = streams[1]
-        
-        with open(path_keyp, 'r') as file:
-            data = json.load(file)
-            data = data['coord']
-            for i, row in enumerate(df_keyp.values):
-                targets = row[2]
-                if targets is np.nan: continue
-                idx = int(targets.split(',')[0])
-                imgname = data[i]['imgpath']
-                people = data[i]['people']
-                torso = data[i]['torso']
-                
-                if imgname == os.path.basename(imgpath):
-                    target_coord = people[idx]
-                    target_torso = torso[idx]
-                    crop_coords = []
-                    
-                    for j, rgb in enumerate(rgbs[:]):
-                        try:
-                            target_window = (target_coord[j])
-                            if target_window is not None:
-                                target_window = calc_margin(torso, target_window)
-                                crop_coords.append(target_window)
-                            else:
-                                target_window = (0, 0, 0, 0)
-                                crop_coords.append(target_window)
-                        except:
-                            print(imgpath)
-                            continue
-                    cropped = crop_by_clip((rgbs, flows), crop_coords, imgpath)
-        return cropped
     
     def to_one_hot(self, label):
         to_one_hot = np.eye(2)
@@ -247,19 +206,12 @@ class VideoDataset(data.Dataset):
         """ TODO"""
         return
     
-    def check_preprocess(self):
-        # TODO: Check image size in image_dir
-        if not os.path.exists(self.image_dir):
-            return False
-        elif not os.path.exists(os.path.join(self.image_dir, 'train')):
-            return False
-        return True
-    
-    
-    def preprocess(self):
-        from sklearn.model_selection import train_test_split
-        #### TODO: split train test 
-        print('Preprocessing finished.')
+    def preprocess(self, num_workers):
+        paths = [self.__getpath__(i) for i in range(self.__len__())]
+        print(len(paths))
+        pool = Pool(num_workers)
+        pool.map(get_flow, paths)
+        return
 
     
     def __len__(self):
