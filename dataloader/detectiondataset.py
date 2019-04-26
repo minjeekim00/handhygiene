@@ -26,31 +26,12 @@ def make_dataset(dir, class_to_idx):
     """
     fnames, coords, labels = [], [], []
     
-    exclusions = [
-     '5_20181119_frames029980',
-     '8_20181122_frames001281',
-     '18_20181204_frames006385',
-     '38_20190119_frames000270',
-     '38_20190119_frames000382',
-     '38_20190119_frames000643',
-     '38_20190119_frames000905',
-     '38_20190119_frames001529',
-     '38_20190119_frames001600',
-     '38_20190119_frames001633',
-     '38_20190119_frames001746',
-     '38_20190119_frames002412',
-     '38_20190119_frames002615',
-     '38_20190119_frames002739', # lack of boxes
-     '38_20190119_frames002913',
-     '38_20190119_frames003847',
-     '38_20190119_frames004411',
-     '38_20190119_frames005471',
-     '38_20190119_frames006438',
-     '38_20190119_frames006587']
-    
     keypoint = '/data/private/minjee-video/handhygiene/data/keypoints.txt'
     df=pd.read_csv('/data/private/minjee-video/handhygiene/data/label.csv')
     
+    exclusions = [
+    '38_20190119_frames000643'
+    ]
     # target 있는 imgpath만 선별
     df = df[df['targets'].notnull()]
     lists = df['imgpath'].values
@@ -65,6 +46,10 @@ def make_dataset(dir, class_to_idx):
                 continue
             if fname in exclusions:
                 continue
+                
+            frames = sorted([os.path.join(dir, img) 
+                             for img in os.listdir(os.path.join(dir, fname))])
+            frames = [img for img in frames if is_image_file(img)]
             
             item = [d for d in data if d['imgpath']==fname][0]
             people = item['people']
@@ -74,10 +59,15 @@ def make_dataset(dir, class_to_idx):
             tidxs = df[df['imgpath']==fname]['targets'].values[0] # target idx
             tidxs = [int(t) for t in tidxs.strip().split(',')]
             nidxs = list(range(npeople))
-            nidxs = [n for n in nidxs if n not in tidxs]
+            nidxs = [int(n) for n in nidxs if n not in tidxs]
             
             ## appending clean
             for tidx in tidxs:
+                if len(frames) != len(people[tidx]):
+                    print("<{}> {} coords and {} frames / of people {}"
+                          .format(fname, len(people[tidx]), len(frames), tidx))
+                    print(people[tidx])
+                    continue
                 fnames.append(os.path.join(dir, fname))
                 coords.append({'people':people[tidx], 
                                'torso':torso[tidx]})
@@ -85,11 +75,18 @@ def make_dataset(dir, class_to_idx):
         
             ## appending notclean 
             if len(nidxs) > 0:
-                nidx = int(nidxs[0])
-                fnames.append(os.path.join(dir, fname))
-                coords.append({'people':people[nidx], 
-                               'torso':torso[nidx]})
-                labels.append('notclean')
+                max = np.random.randint(1, 2+1)
+                for nidx in nidxs[:max]:
+                    if len(frames) != len(people[nidx]):
+                        print("<{}> {} coords and {} frames / of people {}"
+                              .format(fname, len(people[nidx]), len(frames), nidx))
+                        print(people[nidx])
+                        continue
+
+                    fnames.append(os.path.join(dir, fname))
+                    coords.append({'people':people[nidx], 
+                                   'torso':torso[nidx]})
+                    labels.append('notclean')
     
     #assert len(labels) == len(fnames)
     print('Number of {} people: {:d}'.format(dir, len(fnames)))
@@ -97,11 +94,10 @@ def make_dataset(dir, class_to_idx):
     
     return [fnames, coords, targets]
 
-
-def default_loader(dir, coords):
+def default_loader(dir, coords, num_workers):
     
     rgbs = pil_frame_loader(dir, coords)
-    flows = pil_flow_loader(dir, coords)
+    flows = pil_flow_loader(dir, coords, num_workers)
     return rgbs, flows
  
 def crop_pil_image(coords, idx):
@@ -142,7 +138,7 @@ def pil_frame_loader(dir, coords):
     buffer = crop_by_clip(buffer, cropped)
     return buffer
 
-def pil_flow_loader(dir, coords):
+def pil_flow_loader(dir, coords, num_workers):
     """
         return: list of PIL Images
     """
@@ -168,7 +164,7 @@ def pil_flow_loader(dir, coords):
 class VideoDataset(data.Dataset):
         
     def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, 
-                 use_keypoints=False, loader=default_loader):
+                 use_keypoints=False, loader=default_loader, num_workers=1):
 
         self.root = root
         self.loader = loader
@@ -182,6 +178,7 @@ class VideoDataset(data.Dataset):
         self.transform = transform
         self.clip_len = clip_len
         self.use_keypoints = use_keypoints
+        self.num_workers = num_workers
 
         if preprocess:
             self.preprocess()
@@ -196,7 +193,7 @@ class VideoDataset(data.Dataset):
         coords = self.samples[1][index]
         targets = self.samples[2][index]
         
-        frames, flows = self.loader(fnames, coords)
+        frames, flows = self.loader(fnames, coords, self.num_workers)
         
         if self.transform: ## applying torchvision transform
             _frames = []
@@ -232,23 +229,25 @@ class VideoDataset(data.Dataset):
         clip_len = self.clip_len
         nframes = len(frames)
         
-        if nframes == clip_len:
-            frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
-            flows = torch.stack(flows).transpose(0, 1)
-            #print(frames.shape, flows.shape, index)
-            return (frames, flows)
+        #if nframes == clip_len:
+        #    return (frames, flows)
         #elif nframes < clip_len:
         #    return self.clip_looping(streams, index)
-        
-        elif nframes > clip_len:
-            return self.clip_sampling(streams, index)
-        
-        else:
+        #else:
             #frames = self.clip_speed_changer(frames)
             #flows = self.clip_speed_changer(flows)
-            frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
-            flows = torch.stack(flows).transpose(0, 1)
+            
+        if nframes > clip_len:
+            (frames, flows) = self.clip_sampling(streams, index)
+        
+        elif nframes < clip_len:
+            frames = self.clip_speed_changer(frames)
+            flows = self.clip_speed_changer(flows)
             return (frames, flows)
+        
+        frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
+        flows = torch.stack(flows).transpose(0, 1)
+        return (frames, flows)
     
     def clip_looping(self, streams, index):
         """
@@ -265,8 +264,6 @@ class VideoDataset(data.Dataset):
         frames = frames[:clip_len]
         flows = flows*niters
         flows = flows[:clip_len]
-        frames = torch.stack(frames).transpose(0, 1)
-        flows = torch.stack(flows).transpose(0, 1)
         
         return (frames, flows)
         
@@ -309,8 +306,8 @@ class VideoDataset(data.Dataset):
             print(self.__getpath__(index))
             return print("minimum {} frames are needed to process".format(clip_len))
         
-        frames = torch.stack(frames[start:start+clip_len]).transpose(0, 1)
-        flows = torch.stack(flows[start:start+clip_len]).transpose(0, 1)
+        frames = frames[start:start+clip_len]
+        flows = flows[start:start+clip_len]
         return (frames, flows)
     
     def clip_add_backwards(self, streams, index):
@@ -336,6 +333,9 @@ class VideoDataset(data.Dataset):
     
     def __getpath__(self, index):
         return self.samples[0][index]
+    
+    def __getcoords__(self, index):
+        return self.samples[1][index]
 
 
 if __name__ == "__main__":

@@ -244,6 +244,7 @@ class VideoDataset(data.Dataset):
         return (frames, flows)
     
     def clip_add_backwards(self, streams, index):
+        """ TODO"""
         return
     
     def check_preprocess(self):
