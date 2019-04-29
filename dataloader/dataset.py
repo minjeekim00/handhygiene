@@ -11,7 +11,7 @@ from glob import glob
 
 import json
 import pandas as pd
-from .imageset import *
+from .imagedataset import *
 from .opticalflow import compute_TVL1
 from .opticalflow import get_flow
 from .poseroi import calc_margin
@@ -208,7 +208,6 @@ class VideoDataset(data.Dataset):
     
     def preprocess(self, num_workers):
         paths = [self.__getpath__(i) for i in range(self.__len__())]
-        print(len(paths))
         pool = Pool(num_workers)
         pool.map(get_flow, paths)
         return

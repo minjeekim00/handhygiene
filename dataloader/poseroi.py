@@ -31,6 +31,8 @@ def draw_bbox(imgpath, track_window, margin=False):
     rect = patches.Rectangle((x-margin_w,y-margin_h),width,height, linewidth=1,edgecolor='r',facecolor='none')
     # Add the patch to the Axes
     ax.add_patch(rect)
+    ax.annotate('clean', (x, y), color='cyan', weight='bold', 
+                fontsize=10, ha='center', va='center')
     plt.show()
 
 def bb_intersection_over_union(boxA, boxB):
@@ -123,7 +125,7 @@ def calc_margin(torso, track_window):
     return (x, y, w, h)
 
 
-def crop_by_clip(images, coords, mode='rgb'):
+def crop_by_clip(images, coords, idx=None, mode='rgb'):
     """
         rbgs: type: PIL.Image
         coords: (num, (x, y, w, h))
@@ -136,8 +138,7 @@ def crop_by_clip(images, coords, mode='rgb'):
     max_h, max_h_idx = np.max(hs), np.argmax(hs)
     
     cropped = []
-    
-    for i, track_window in enumerate(tqdm(coords)):
+    for i, track_window in enumerate(coords):
         ## extra margin by max_w, max_h
         x, y, w, h = track_window
         
@@ -152,30 +153,56 @@ def crop_by_clip(images, coords, mode='rgb'):
         #left = x if x>0 else 0
         #upper = y if y>0 else 0
         
-        img = images[i].crop((x, y, (x+w), (y+h)))
+        # when single image
+        if not isinstance(images, list) and idx is not None:
+            img = images.crop((x, y, (x+w), (y+h)))
+            shape_w, shape_h = images.size
+            if x < 0:
+                img = np.array(img)
+                value = np.abs(x)
+                means = [np.mean(img[:,value:,c]) for c in range(3)]
+                for i in range(3):
+                    img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
+                img = Image.fromarray(img)
+
+            elif x+w > shape_w: 
+                img = np.array(img)
+                value = x+w-shape_w
+                means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
+                for i in range(3):
+                    img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
+                img = Image.fromarray(img)
+            return  img
         
-        shape_w, shape_h = images[i].size
-        # mean padding
-        if x < 0:
-            img = np.array(img)
-            value = np.abs(x)
+        # for multiple images
+        else:
+            img = images[i].crop((x, y, (x+w), (y+h)))
+            shape_w, shape_h = images[i].size
             
-            means = [np.mean(img[:,value:,c]) for c in range(3)]
-            for i in range(3):
-                img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
-            img = Image.fromarray(img)
-            
-        elif x+w > shape_w: 
-            img = np.array(img)
-            value = x+w-shape_w
-            
-            means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
-            for i in range(3):
-                img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
-            img = Image.fromarray(img)
-            
-        # if y < 0, if x > 224, y > 224
-        cropped.append(img)
+            # mean padding
+            if x < 0:
+                img = np.array(img)
+                value = np.abs(x)
+                means = [np.mean(img[:,value:,c]) for c in range(3)]
+                for i in range(3):
+                    img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
+                img = Image.fromarray(img)
+
+            elif x+w > shape_w: 
+                img = np.array(img)
+                value = x+w-shape_w
+
+                means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
+                for i in range(3):
+                    img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
+                img = Image.fromarray(img)
+
+            # if y < 0, if x > 224, y > 224
+            cropped.append(img)
+        
+    
+    
+    
     return cropped
         
 

@@ -11,7 +11,7 @@ from glob import glob
 
 import json
 import pandas as pd
-from .imageset import *
+from .imagedataset import *
 from .opticalflow import compute_TVL1
 from .opticalflow import get_flow
 from .poseroi import calc_margin
@@ -24,6 +24,8 @@ def make_dataset(dir, class_to_idx):
         coords: dict containg people, torso coordinates
         labels: class
     """
+    
+    np.random.seed(50)
     fnames, coords, labels = [], [], []
     
     keypoint = '/data/private/minjee-video/handhygiene/data/keypoints.txt'
@@ -179,6 +181,7 @@ class VideoDataset(data.Dataset):
         self.clip_len = clip_len
         self.use_keypoints = use_keypoints
 
+        ## check optical flow
         if preprocess:
             self.preprocess(num_workers)
 

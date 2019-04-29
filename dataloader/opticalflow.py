@@ -63,7 +63,7 @@ def get_flow(dir):
     if os.path.exists(flow_dir):
         return np.load(flow_dir)
     
-    print("processing optical flows.....".)
+    print("processing optical flows.....")
     
     flow = cal_for_frames(dir)
     
