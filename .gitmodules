@@ -1,3 +1,0 @@
-[submodule "src/kinetics_i3d_pytorch"]
-	path = src/kinetics_i3d_pytorch
-	url = https://github.com/minjeekim00/kinetics_i3d_pytorch.git
