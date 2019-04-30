@@ -1,28 +1,45 @@
 import torch
 import torch.utils.data as data
-import torch.nn.functional as F
+from torchvision.datasets import DatasetFolder
+from torchvision.datasets.folder import *
 
 import os
 import numpy as np
-from PIL import Image # to use torchivision transforms
+from PIL import Image
 
 from tqdm import tqdm
 from glob import glob
 
-from .imagedataset import *
 
+def is_image_file(filename):
+    return has_file_allowed_extension(filename, IMG_EXTENSIONS)
+
+def make_dataset(dir, class_to_idx):
+    fnames, labels = [], []
+    for label in sorted(os.listdir(dir)):
+        for fname in os.listdir(os.path.join(dir, label)):
+            fnames.append(os.path.join(dir, label, fname))
+            labels.append(label)
+            
+    assert len(labels) == len(fnames)
+    print('Number of {} videos: {:d}'.format(dir, len(fnames)))
+    targets = labels_to_idx(labels)
+    return [fnames, targets]
+
+
+def labels_to_idx(labels):
+    labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
+    return np.array([labels_dict[label] for label in labels], dtype=int)
 
 def default_loader(dir):
-    rgbs = video_loader(dir)
-    flows = optflow_loader(dir)
-    return rgbs, flows
+    return video_loader(dir)
             
-
 def video_loader(path):
     """
         return: list of PIL Images
     """
     frames = sorted([os.path.join(path, img) for img in os.listdir(path)])
+    frames = [fname for fname in frames if is_image_file(fname)]
     video = []
     for i, fname in enumerate(frames):
         if not is_image_file(fname):
@@ -33,27 +50,27 @@ def video_loader(path):
             video.append(img)   
     return video
 
-def optflow_loader(dir):
-    """
-        return: list of PIL Images
-    """
-    from .opticalflow import get_flow
-    flow = get_flow(dir)
-   
-    flows = []
-    for i, flw in enumerate(flow):
-        shape = flw.shape
-        # to make extra 3 channel to use torchvision transform
-        tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
-        img = np.dstack((flw.astype(np.uint8), tmp))
-        img = Image.fromarray(img)
-        flows.append(img)
-    return flows
 
-class VideoDataset(ImageDataset):
+class VideoFolder(DatasetFolder):
+    """A generic data loader where the samples are arranged in this way: ::
+
+        root/class_x/video_name/images0001.ext
+        root/class_x/video_name/images0030.ext
+        root/class_x/xxz/images0001.ext
+
+        root/class_y/123/images0001.ext
+        root/class_y/nsdf3/images0001.ext
+        root/class_y/asd932_/images0001.ext
+    """
+    def __init__(self, root, split='train', clip_len=16, 
+                 spatial_transform=None,
+                 temporal_transform=None,
+                 target_transform=None,
+                 preprocess=False, loader=default_loader):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, loader=default_loader, num_workers=1):
-        self.root = root
+        super(VideoFolder, self).__init__(root, loader, IMG_EXTENSIONS,
+                                          transform=spatial_transform,
+                                          target_transform=target_transform)
         self.loader = loader
         self.video_dir = os.path.join(root, 'videos')
         self.image_dir = os.path.join(root, 'images')
@@ -61,164 +78,35 @@ class VideoDataset(ImageDataset):
         
         classes, class_to_idx = find_classes(folder)
         self.classes = classes
-        self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
-        self.transform = transform
+        self.class_to_idx = class_to_idx
+        self.samples = make_dataset(folder, class_to_idx)
+        self.spatial_transform = spatial_transform
+        self.temporal_transform = temporal_transform
+        self.target_transform = target_transform
         self.clip_len = clip_len
-        self.num_workers = num_workers
-
-        if preprocess:
-            self.preprocess(num_workers)
+        
 
     def __getitem__(self, index):
-        # loading and preprocessing.
-        """
-            TODO: clean up batch size ordering
-            sampling 16 frames
-        """
-        fnames, targets = self.samples[0][index], self.samples[1][index]
-        frames, flows = self.loader(fnames)
+        fnames = self.samples[0][index]
         
-        if self.transform: ## applying torchvision transform
-            _frames = []
-            _flows = []
-            for frame in frames: ## for RGB
-                frame = self.transform(frame)
-                _frames.append(frame)
-            for flow in flows:
-                ### TODO: flow should be from [-20, 20] to [-1, 1], now : [0, 255] to [-1, 1]
-                flow = self.transform(flow) 
-                _flows.append(flow[:-1,:,:]) # exclude temp channel 3
-            frames = _frames
-            flows = _flows
-       
-        targets = torch.tensor(targets).unsqueeze(0)
+        if self.temporal_transform is not None:
+            fnames = self.temporal_transform(fnames)
+        clips = self.loader(fnames)
         
-        ## temporal transform
-        frames, flows = self.temporal_transform((frames, flows), index)
-        return frames, flows, targets
-    
-    def temporal_transform(self, streams, index):
-        """
-            all clip length resize to 16
-        """
-        frames, flows = streams
-        clip_len = self.clip_len
-        nframes = len(frames)
-        
-        if nframes == clip_len:
-            frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
-            flows = torch.stack(flows).transpose(0, 1)
-            #print(frames.shape, flows.shape, index)
-            return (frames, flows)
-        #elif nframes < clip_len:
-        #    return self.clip_looping(streams, index)
-        
-        elif nframes > clip_len:
-            return self.clip_sampling(streams, index)
-        
-        else:
-            #frames = self.clip_speed_changer(frames)
-            #flows = self.clip_speed_changer(flows)
-            frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
-            flows = torch.stack(flows).transpose(0, 1)
-            return (frames, flows)
-    
-    def clip_looping(self, streams, index):
-        """
-            Loop a clip as many times as necessary to satisfy input size
-            input shape: DxCxHxW
-            return shape: CxDxHxW
-        """
-        frames, flows = streams
-        clip_len = self.clip_len
-        nframes = len(frames)
-        
-        niters = int(clip_len/nframes)+1
-        frames = frames*niters
-        frames = frames[:clip_len]
-        flows = flows*niters
-        flows = flows[:clip_len]
-        frames = torch.stack(frames).transpose(0, 1)
-        flows = torch.stack(flows).transpose(0, 1)
-        
-        return (frames, flows)
-        
-    def clip_speed_changer(self, images):
-        """
-            Interpolate clip size with length of `self.clip_len`
-            ex) 25 --> 16
-            input shape: DxCxHxW
-            return shape: CxDxHxW
-        """
-        ## TODO: tensor ordering
-        images = torch.stack(images)
-        shape = images.shape # DCHW
-        images = images.transpose(0, 1).unsqueeze(0) #DCHW --> BCDHW
-        #`mini-batch x channels x [optional depth] x [optional height] x width`.
-        images = F.interpolate(images, size=(self.clip_len, 224, 224), 
-                               mode='trilinear', align_corners=True)
-        images = images.view(shape[1], self.clip_len, shape[2], shape[3]) #squeeze
-        return images #CDHW
-    
-    def clip_sampling(self, streams, index):
-        """
-            Sample clip with random start number.
-            The length of sampled clip should be same with `self.clip_len`
-            input shape: DxCxHxW
-            return shape: CxDxHxW
-        """
-        frames, flows = streams
-        clip_len = self.clip_len
-        start = 0
-        if len(frames) != len(flows):
-            print(self.__getpath__(index))
-            return print("number of frames {} and flows {} are different.".format(len(frames), len(flows)))
-        
-        nframes = len(frames)
-        if nframes > clip_len:
-            size = nframes-clip_len+1
-            start = np.random.choice(size, 1)[0]
-        elif nframes < clip_len: # drop a clip when its length is less than 16
-            print(self.__getpath__(index))
-            return print("minimum {} frames are needed to process".format(clip_len))
-        
-        frames = torch.stack(frames[start:start+clip_len]).transpose(0, 1)
-        flows = torch.stack(flows[start:start+clip_len]).transpose(0, 1)
-        return (frames, flows)
-    
-    def clip_add_backwards(self, streams, index):
-        """ TODO"""
-        return
-    
-    def preprocess(self, num_workers):
-        from multiprocessing import Pool
-        paths = [self.__getpath__(i) for i in range(self.__len__())]
-        pool = Pool(num_workers)
-        pool.map(get_flow, paths)
-        return
+        if self.spatial_transform is not None:
+            clips = [self.spatial_transform(img) for img in clips]
+        clips = torch.stack(clips).permute(1, 0, 2, 3)
 
+        targets = self.samples[1][index]
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+            
+        #targets = torch.tensor(targets).unsqueeze(0)
+        return clips, targets
+    
     
     def __len__(self):
         return len(self.samples[0]) # fnames
     
     def __getpath__(self, index):
         return self.samples[0][index]
-
-
-if __name__ == "__main__":
-    from torch.utils.data import DataLoader
-    
-    dataset_path = os.getcwd()
-    train_dataset = VideoDataset(dataset_path, split='train', transform=transforms)
-    train_loader = DataLoader(dataset['train'], batch_size=2, shuffle=True, num_workers=4)
-
-    for i, sample in enumerate(train_loader):
-        rgbs = sample[0]
-        flows = sample[1]
-        labels = sample[2]
-        print(rgbs.size())
-        print(flows.size())
-        print(labels)
-
-        if i == 1:
-            break

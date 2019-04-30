@@ -39,32 +39,3 @@ def cal_for_frames(dir):
     
     np.save(flow_dir, flow)
     return flow
-
-
-def get_flow(dir):
-    """
-        return: return: (1, num_frames, H, W, 2) shape of array of .npy
-        ##return: (1, num_frames, 224, 224, 2) shape of array of .npy
-    """
-    basename = os.path.basename(dir)
-    
-    if len(basename.split('_')) > 3: # when temporal sampling
-        start = int(basename.split('_')[-1])
-        currbasename = basename.rsplit('_', 1)[0]
-        currdir = dir.rsplit('/', 1)[0]
-        flow_dir = os.path.join(currdir, currbasename, '{}.npy'.format(currbasename))
-        if os.path.exists(flow_dir):
-            flows = np.load(flow_dir)
-            return flows[start:start+16] ## clip_len
-        #else:
-            ## TODO: when base npy not exists
-      
-    flow_dir = os.path.join(dir,'{}.npy'.format(basename))
-    if os.path.exists(flow_dir):
-        return np.load(flow_dir)
-    
-    print("processing optical flows.....")
-    
-    flow = cal_for_frames(dir)
-    
-    return flow
