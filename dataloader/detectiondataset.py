@@ -9,13 +9,7 @@ from PIL import Image # to use torchivision transforms
 from tqdm import tqdm
 from glob import glob
 
-import json
-import pandas as pd
-from .imagedataset import *
-from .opticalflow import compute_TVL1
-from .opticalflow import get_flow
-from .poseroi import calc_margin
-from .poseroi import crop_by_clip
+from .videodataset import *
 
 
 def make_dataset(dir, class_to_idx):
@@ -24,7 +18,8 @@ def make_dataset(dir, class_to_idx):
         coords: dict containg people, torso coordinates
         labels: class
     """
-    
+    import json
+    import pandas as pd
     np.random.seed(50)
     fnames, coords, labels = [], [], []
     
@@ -104,6 +99,7 @@ def default_loader(dir, coords):
  
 def crop_pil_image(coords, idx):
     
+    from .poseroi import calc_margin
     people = coords['people']
     torso = coords['torso']
     
@@ -124,6 +120,7 @@ def pil_frame_loader(dir, coords):
     """
         return: list of PIL Images
     """
+    from .poseroi import crop_by_clip
     frames = sorted([os.path.join(dir, img) for img in os.listdir(dir)])
     frames = [fname for fname in frames if is_image_file(fname)]
     buffer = []
@@ -144,6 +141,8 @@ def pil_flow_loader(dir, coords):
     """
         return: list of PIL Images
     """
+    from .opticalflow import get_flow
+    from .poseroi import crop_by_clip
     flow = get_flow(dir)
    
     buffer = []
@@ -163,24 +162,22 @@ def pil_flow_loader(dir, coords):
     return buffer
 
 
-class VideoDataset(data.Dataset):
+class VideoOpenposeDataset(VideoDataset):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, 
-                 use_keypoints=False, loader=default_loader, num_workers=1):
+    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, loader=default_loader, num_workers=1):
 
-        self.root = root
+        super(VideoOpenposeDataset, self).__init__(root, split, clip_len,
+                                       transform, preprocess, loader, num_workers)
         self.loader = loader
-        self.video_dir = os.path.join(root, 'videos')
         self.image_dir = os.path.join(root, 'images')
         folder = os.path.join(self.image_dir, split)
         
         classes, class_to_idx = find_classes(folder)
-        self.classes = classes
         self.samples = make_dataset(folder, class_to_idx) # [fnames, labels]
         self.transform = transform
         self.clip_len = clip_len
-        self.use_keypoints = use_keypoints
-
+        self.num_workers = num_workers
+        
         ## check optical flow
         if preprocess:
             self.preprocess(num_workers)
@@ -210,46 +207,35 @@ class VideoDataset(data.Dataset):
             frames = _frames
             flows = _flows
        
-        # target transform
-        #if len(targets) != 2:
         targets = torch.tensor(targets).unsqueeze(0)
         
         ## temporal transform
         frames, flows = self.temporal_transform((frames, flows), index)
         return frames, flows, targets
     
-    
-    def to_one_hot(self, label):
-        to_one_hot = np.eye(2)
-        return to_one_hot[int(label)]
-    
     def temporal_transform(self, streams, index):
         """
+            TODO: separate temproal transform out 
+            
             all clip length resize to 16
         """
         frames, flows = streams
         clip_len = self.clip_len
         nframes = len(frames)
         
-        #if nframes == clip_len:
-        #    return (frames, flows)
-        #elif nframes < clip_len:
-        #    return self.clip_looping(streams, index)
-        #else:
-            #frames = self.clip_speed_changer(frames)
-            #flows = self.clip_speed_changer(flows)
-            
         if nframes > clip_len:
             (frames, flows) = self.clip_sampling(streams, index)
         
         elif nframes < clip_len:
-            frames = self.clip_speed_changer(frames)
-            flows = self.clip_speed_changer(flows)
-            return (frames, flows)
+            #return self.clip_looping(streams, index)
+            #frames = self.clip_speed_changer(frames)
+            #flows = self.clip_speed_changer(flows)
+            (frames, flows) = self.clip_mirroring((frames, flows), index)
         
         frames = torch.stack(frames).transpose(0, 1) # DCHW -> CDHW
         flows = torch.stack(flows).transpose(0, 1)
         return (frames, flows)
+    
     
     def clip_looping(self, streams, index):
         """
@@ -312,19 +298,31 @@ class VideoDataset(data.Dataset):
         flows = flows[start:start+clip_len]
         return (frames, flows)
     
-    def clip_add_backwards(self, streams, index):
-        return
-    
-    def check_preprocess(self):
-        # TODO: Check image size in image_dir
-        if not os.path.exists(self.image_dir):
-            return False
-        elif not os.path.exists(os.path.join(self.image_dir, 'train')):
-            return False
-        return True
+    def clip_mirroring(self, streams, index):
+        # input: DxCxHxW list
+        
+        frames, flows = streams
+        clip_len = self.clip_len
+        
+        # init
+        frames_tmp = frames[:]
+        flows_tmp = flows[:]
+        
+        for i in range(100):
+            mirror = list(reversed(frames)) if i == 0 or i/2 == 1 else frames
+            frames_tmp += mirror[1:]
+            mirror = list(reversed(flows)) if i == 0 or i/2 == 1 else flows
+            flows_tmp += mirror[1:]
+            
+            if len(frames_tmp) >= clip_len:
+                frames = frames_tmp[:clip_len]
+                flows = flows_tmp[:clip_len]
+            
+        return (frames, flows)
     
     
     def preprocess(self, num_workers):
+        from multiprocessing import Pool
         paths = [self.__getpath__(i) for i in range(self.__len__())]
         pool = Pool(num_workers)
         pool.map(get_flow, paths)

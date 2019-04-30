@@ -9,15 +9,7 @@ from PIL import Image # to use torchivision transforms
 from tqdm import tqdm
 from glob import glob
 
-import json
-import pandas as pd
 from .imagedataset import *
-from .opticalflow import compute_TVL1
-from .opticalflow import get_flow
-from .poseroi import calc_margin
-from .poseroi import crop_by_clip
-
-from multiprocessing import Pool
 
 
 def default_loader(dir):
@@ -46,6 +38,7 @@ def pil_flow_loader(dir):
     """
         return: list of PIL Images
     """
+    from .opticalflow import get_flow
     flow = get_flow(dir)
    
     buffer = []
@@ -58,11 +51,9 @@ def pil_flow_loader(dir):
         buffer.append(img)
     return buffer
 
-class VideoDataset(data.Dataset):
+class VideoDataset(ImageDataset):
         
-    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False,
-                 loader=default_loader, num_workers=1):
-
+    def __init__(self, root, split='train', clip_len=16, transform=None, preprocess=False, loader=default_loader, num_workers=1):
         self.root = root
         self.loader = loader
         self.video_dir = os.path.join(root, 'videos')
@@ -101,17 +92,11 @@ class VideoDataset(data.Dataset):
             frames = _frames
             flows = _flows
        
-        # target transform
-        #if len(targets) != 2:
         targets = torch.tensor(targets).unsqueeze(0)
         
         ## temporal transform
         frames, flows = self.temporal_transform((frames, flows), index)
         return frames, flows, targets
-    
-    def to_one_hot(self, label):
-        to_one_hot = np.eye(2)
-        return to_one_hot[int(label)]
     
     def temporal_transform(self, streams, index):
         """
@@ -207,6 +192,7 @@ class VideoDataset(data.Dataset):
         return
     
     def preprocess(self, num_workers):
+        from multiprocessing import Pool
         paths = [self.__getpath__(i) for i in range(self.__len__())]
         pool = Pool(num_workers)
         pool.map(get_flow, paths)

@@ -39,9 +39,6 @@ def make_dataset(dir, class_to_idx):
 def labels_to_idx(labels):
     
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    #if len(set(labels)) == 2:
-    #    return np.array([np.eye(2)[int(labels_dict[label])] for label in labels], dtype=np.float32)
-    #else:
     return np.array([labels_dict[label] for label in labels], dtype=int)
 
 

@@ -155,56 +155,47 @@ def crop_by_clip(images, coords, idx=None, mode='rgb'):
         
         # when single image
         if not isinstance(images, list) and idx is not None:
+            window = (x,y,w,h)
             img = images.crop((x, y, (x+w), (y+h)))
-            shape_w, shape_h = images.size
-            if x < 0:
-                img = np.array(img)
-                value = np.abs(x)
-                means = [np.mean(img[:,value:,c]) for c in range(3)]
-                for i in range(3):
-                    img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
-                img = Image.fromarray(img)
-
-            elif x+w > shape_w: 
-                img = np.array(img)
-                value = x+w-shape_w
-                means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
-                for i in range(3):
-                    img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
-                img = Image.fromarray(img)
+            #img = mean_padding(img, window, (images.size), mode)
             return  img
         
         # for multiple images
         else:
+            window = (x,y,w,h)
             img = images[i].crop((x, y, (x+w), (y+h)))
-            shape_w, shape_h = images[i].size
             
             # mean padding
-            if x < 0:
-                img = np.array(img)
-                value = np.abs(x)
-                means = [np.mean(img[:,value:,c]) for c in range(3)]
-                for i in range(3):
-                    img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
-                img = Image.fromarray(img)
-
-            elif x+w > shape_w: 
-                img = np.array(img)
-                value = x+w-shape_w
-
-                means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
-                for i in range(3):
-                    img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
-                img = Image.fromarray(img)
+            #img = mean_padding(img, window, (images[i].size), mode)
 
             # if y < 0, if x > 224, y > 224
             cropped.append(img)
-        
-    
-    
-    
+            
     return cropped
         
+def mean_padding(img, window, size, mode):
+    (x,y,w,h) = window
+    shape_w, shape_h = size
+    if x < 0:
+        img = np.array(img)
+        value = np.abs(x)
+        means = [np.mean(img[:,value:,c]) for c in range(3)]
+        for i in range(3):
+            img[:,:value,i]=means[i] if mode == 'rgb' else float(255/2)
+            img = Image.fromarray(img)
+    
+    elif x+w > shape_w:
+        img = np.array(img)
+        value = x+w-shape_w
+        means = [np.mean(img[:,:-1*value,c]) for c in range(3)]
+        for i in range(3):
+            img[:,-1*value:,i]=means[i] if mode == 'rgb' else float(255/2)
+        img = Image.fromarray(img)
+    
+    # TODOs
+    # if y < 0, if x > 224, y > 224
+    
+    return img
 
 
 if __name__ == '__main__':
