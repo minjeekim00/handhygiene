@@ -13,43 +13,42 @@ from .imagedataset import *
 
 
 def default_loader(dir):
-    rgbs = pil_frame_loader(dir)
-    flows = pil_flow_loader(dir)
+    rgbs = video_loader(dir)
+    flows = optflow_loader(dir)
     return rgbs, flows
             
-    
-def pil_frame_loader(path):
+
+def video_loader(path):
     """
         return: list of PIL Images
     """
     frames = sorted([os.path.join(path, img) for img in os.listdir(path)])
-    
-    buffer = []
+    video = []
     for i, fname in enumerate(frames):
         if not is_image_file(fname):
             continue
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            buffer.append(img)   
-    return buffer
+            video.append(img)   
+    return video
 
-def pil_flow_loader(dir):
+def optflow_loader(dir):
     """
         return: list of PIL Images
     """
     from .opticalflow import get_flow
     flow = get_flow(dir)
    
-    buffer = []
+    flows = []
     for i, flw in enumerate(flow):
         shape = flw.shape
         # to make extra 3 channel to use torchvision transform
         tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
         img = np.dstack((flw.astype(np.uint8), tmp))
         img = Image.fromarray(img)
-        buffer.append(img)
-    return buffer
+        flows.append(img)
+    return flows
 
 class VideoDataset(ImageDataset):
         

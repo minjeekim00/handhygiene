@@ -9,8 +9,6 @@ from PIL import Image # to use torchivision transforms
 from tqdm import tqdm
 from glob import glob
 
-from .videodataset import *
-
 
 def make_dataset(dir, class_to_idx):
     """
@@ -93,8 +91,8 @@ def make_dataset(dir, class_to_idx):
 
 def default_loader(dir, coords):
     
-    rgbs = pil_frame_loader(dir, coords)
-    flows = pil_flow_loader(dir, coords)
+    rgbs = video_loader(dir, coords)
+    flows = optflow_loader(dir, coords)
     return rgbs, flows
  
 def crop_pil_image(coords, idx):
@@ -116,14 +114,14 @@ def crop_pil_image(coords, idx):
     return window
 
 
-def pil_frame_loader(dir, coords):
+def video_loader(dir, coords):
     """
         return: list of PIL Images
     """
     from .poseroi import crop_by_clip
     frames = sorted([os.path.join(dir, img) for img in os.listdir(dir)])
     frames = [fname for fname in frames if is_image_file(fname)]
-    buffer = []
+    video = []
     cropped = [] # coordinates
     for i, fname in enumerate(frames):
         # calc margin
@@ -132,12 +130,12 @@ def pil_frame_loader(dir, coords):
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            buffer.append(img)
+            video.append(img)
     
-    buffer = crop_by_clip(buffer, cropped)
+    video = crop_by_clip(video, cropped)
     return buffer
 
-def pil_flow_loader(dir, coords):
+def optflow_loader(dir, coords):
     """
         return: list of PIL Images
     """
@@ -145,7 +143,7 @@ def pil_flow_loader(dir, coords):
     from .poseroi import crop_by_clip
     flow = get_flow(dir)
    
-    buffer = []
+    flows = []
     cropped = [] # coordinates
     for i, flw in enumerate(flow):
         window = crop_pil_image(coords, i)
@@ -156,9 +154,9 @@ def pil_flow_loader(dir, coords):
         tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
         img = np.dstack((flw.astype(np.uint8), tmp))
         img = Image.fromarray(img)
-        buffer.append(img)
+        flows.append(img)
     
-    buffer = crop_by_clip(buffer, cropped, 'flow')
+    flows = crop_by_clip(flows, cropped, 'flow')
     return buffer
 
 
@@ -201,7 +199,6 @@ class VideoOpenposeDataset(VideoDataset):
                 frame = self.transform(frame)
                 _frames.append(frame)
             for flow in flows:
-                ### TODO: flow should be from [-20, 20] to [-1, 1], now : [0, 255] to [-1, 1]
                 flow = self.transform(flow) 
                 _flows.append(flow[:-1,:,:]) # exclude temp channel 3
             frames = _frames
