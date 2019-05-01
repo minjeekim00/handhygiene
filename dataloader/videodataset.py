@@ -26,24 +26,24 @@ def make_dataset(dir, class_to_idx):
     targets = labels_to_idx(labels)
     return [fnames, targets]
 
-
+def get_framepaths(fname):
+    frames = sorted([os.path.join(fname, img) for img in os.listdir(fname)])
+    frames = [img for img in frames if is_image_file(img)]
+    return frames
+    
 def labels_to_idx(labels):
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
     return np.array([labels_dict[label] for label in labels], dtype=int)
 
-def default_loader(dir):
-    return video_loader(dir)
+def default_loader(frames):
+    return video_loader(frames)
             
-def video_loader(path):
+def video_loader(frames):
     """
         return: list of PIL Images
     """
-    frames = sorted([os.path.join(path, img) for img in os.listdir(path)])
-    frames = [fname for fname in frames if is_image_file(fname)]
     video = []
     for i, fname in enumerate(frames):
-        if not is_image_file(fname):
-            continue
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
@@ -88,10 +88,11 @@ class VideoFolder(DatasetFolder):
 
     def __getitem__(self, index):
         fnames = self.samples[0][index]
+        findices = get_framepaths(fnames)
         
         if self.temporal_transform is not None:
-            fnames = self.temporal_transform(fnames)
-        clips = self.loader(fnames)
+            findices = self.temporal_transform(findices)
+        clips = self.loader(findices)
         
         if self.spatial_transform is not None:
             clips = [self.spatial_transform(img) for img in clips]

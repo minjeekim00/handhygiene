@@ -39,3 +39,30 @@ def cal_for_frames(dir):
     
     np.save(flow_dir, flow)
     return flow
+
+def cal_for_frames(dir):
+    basename =os.path.basename(dir)
+    num = int(basename[-6:])
+    flowdir=os.path.join(dir, 'flow')
+    if not os.path.exists(flowdir): 
+        os.mkdir(flowdir)
+        
+    frames = glob(os.path.join(dir, '*.jpg'))
+    frames.sort()
+    prev = cv2.imread(frames[0])
+    shape = prev.shape
+    prev = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
+    
+    for i, frame_curr in enumerate(tqdm(frames)):
+        name=os.path.join(flowdir, basename[:-6]+'{0:06d}_flow.jpg'.format(num+i))
+        if os.path.exists(name):
+            continue
+        curr = cv2.imread(frame_curr)
+        curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
+        tmp_flow = compute_TVL1(prev, curr)
+        tmp = np.ones((shape[0], shape[1], 1)).astype(np.uint8)*128
+        img = np.dstack((tmp_flow.astype(np.uint8), tmp))
+        prev = curr
+        
+        plt.imsave(name, img)
+    return 

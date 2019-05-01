@@ -17,44 +17,28 @@ import json
 import pandas as pd
 
 
-def default_loader(dir):
-    rgbs = video_loader(dir)
-    flows = optflow_loader(dir)
+def default_loader(fnames):
+    rgbs = video_loader(fnames)
+    flows = optflow_loader(fnames)
     return rgbs, flows
 
-def optflow_loader(dir):
-    flow = get_flow(dir)
-    flows = []
-    for i, flw in enumerate(flow):
-        shape = flw.shape
-        # to make extra 3 channel to use torchvision transform
-        tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
-        img = np.dstack((flw.astype(np.uint8), tmp))
-        img = Image.fromarray(img)
-        flows.append(img)
-    return flows
+def optflow_loader(fnames):
+    ffnames = get_flownames(fnames)
+    if any(not os.path.exists(f) for f in ffnames):
+        dir = os.path.split(fnames[0])[0]
+        cal_for_frames(dir)
+    return video_loader(ffnames)
 
-def get_flow(dir):
-    """
-        return: (1, D, H, W, 2) shape of array of .npy
-    """
-    basename = os.path.basename(dir)
-    
-    if len(basename.split('_')) > 3: # when temporal sampling
-        start = int(basename.split('_')[-1])
-        currbasename = basename.rsplit('_', 1)[0]
-        currdir = dir.rsplit('/', 1)[0]
-        flow_dir = os.path.join(currdir, currbasename, '{}.npy'.format(currbasename))
-        if os.path.exists(flow_dir):
-            flows = np.load(flow_dir)
-            return flows[start:start+16] ## clip_len
-        #else: ## TODO: when base npy not exists
-      
-    flow_dir = os.path.join(dir,'{}.npy'.format(basename))
-    if os.path.exists(flow_dir):
-        return np.load(flow_dir)
-    flow = cal_for_frames(dir)
-    return flow
+
+def get_flownames(fnames):
+    ffnames=[]
+    for img in fnames:
+        dir = os.path.split(img)[0]
+        tail = os.path.split(img)[1]
+        name, ext = os.path.splitext(tail)
+        flow = os.path.join(dir, 'flow', name+'_flow'+ext)
+        ffnames.append(flow)
+    return ffnames
 
 class I3DDataset(VideoFolder):
         
@@ -78,10 +62,11 @@ class I3DDataset(VideoFolder):
     def __getitem__(self, index):
         # loading and preprocessing.
         fnames= self.samples[0][index]
+        findices = get_framepaths(fnames)
         
         if self.temporal_transform is not None:
-            fnames = self.temporal_transform(fnames)
-        clips, flows = self.loader(fnames)
+            findices = self.temporal_transform(findices)
+        clips, flows = self.loader(findices)
          
         if self.spatial_transform is not None:
             clips = [self.spatial_transform(img) for img in clips]
@@ -94,7 +79,7 @@ class I3DDataset(VideoFolder):
         if self.target_transform is not None:
             target = self.target_transform(target)
             
-        #targets = torch.tensor(targets).unsqueeze(0)
+        targets = torch.tensor(targets).unsqueeze(0)
         return clips, flows, targets
     
     
@@ -102,7 +87,7 @@ class I3DDataset(VideoFolder):
         from multiprocessing import Pool
         paths = [self.__getpath__(i) for i in range(self.__len__())]
         pool = Pool(num_workers)
-        pool.map(get_flow, paths)
+        pool.map(cal_for_frames, paths)
         return
     
     def __len__(self):

@@ -3,7 +3,7 @@ import math
 
 
 class LoopPadding(object):
-
+    
     def __init__(self, size):
         self.size = size
 
@@ -102,5 +102,24 @@ class TemporalRandomCrop(object):
             if len(out) >= self.size:
                 break
             out.append(index)
+
+        return out
+    
+    
+class TemporalMirrorLoop(object):
+    
+    def __init__(self, size):
+        self.size = size
+
+    def __call__(self, frame_indices):
+
+        return out
+    
+    
+class TemporalJittering(object):
+    def __init__(self, size):
+        self.size = size
+
+    def __call__(self, frame_indices):
 
         return out

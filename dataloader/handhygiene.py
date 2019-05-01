@@ -101,9 +101,9 @@ def get_keypoints(path='./data/keypoints.txt'):
     return data
 
 
-def default_loader(dir, coords):
-    rgbs = video_loader(dir, coords)
-    flows = optflow_loader(dir, coords)
+def default_loader(fnames, coords):
+    rgbs = video_loader(fnames, coords)
+    flows = optflow_loader(fnames, coords)
     return rgbs, flows
  
 def crop_pil_image(coords, idx):
@@ -122,12 +122,10 @@ def crop_pil_image(coords, idx):
     return window
 
 
-def video_loader(dir, coords):
+def video_loader(frames, coords):
     """
         return: list of PIL Images
     """
-    frames = sorted([os.path.join(dir, img) for img in os.listdir(dir)])
-    frames = [fname for fname in frames if is_image_file(fname)]
     video = []
     cropped = [] # coordinates
     for i, fname in enumerate(frames):
@@ -143,26 +141,16 @@ def video_loader(dir, coords):
     return video
 
 
-def optflow_loader(dir, coords):
+def optflow_loader(fnames, coords):
     """
         return: list of PIL Images
     """
-    flow = get_flow(dir)
-    flows = []
-    cropped = [] # coordinates
-    for i, flw in enumerate(flow):
-        ## cropping with bounding box
-        window = crop_pil_image(coords, i)
-        cropped.append(window)
+    ffnames = get_flownames(fnames)
+    if any(not os.path.exists(f) for f in ffnames):
+        dir = os.path.split(fnames[0])[0]
+        cal_for_frames(dir)
         
-        shape = flw.shape
-        # to make extra 3 channel to use torchvision transform
-        tmp = np.empty((shape[0], shape[1], 1)).astype(np.uint8) 
-        img = np.dstack((flw.astype(np.uint8), tmp))
-        img = Image.fromarray(img)
-        flows.append(img)
-    flows = crop_by_clip(flows, cropped, 'flow')
-    return flows
+    return video_loader(ffnames, coords)
 
     
 class HandHygiene(I3DDataset):
@@ -195,10 +183,12 @@ class HandHygiene(I3DDataset):
     def __getitem__(self, index):
         # loading and preprocessing.
         fnames= self.samples[0][index]
+        findices = get_framepaths(fnames)
         coords= self.samples[1][index]
+        
         if self.temporal_transform is not None:
-            fnames = self.temporal_transform(fnames)
-        clips, flows = self.loader(fnames, coords)
+            findices = self.temporal_transform(findices)
+        clips, flows = self.loader(findices, coords)
          
         if self.spatial_transform is not None:
             clips = [self.spatial_transform(img) for img in clips]
@@ -211,7 +201,7 @@ class HandHygiene(I3DDataset):
         if self.target_transform is not None:
             target = self.target_transform(target)
             
-        #targets = torch.tensor(targets).unsqueeze(0)
+        targets = torch.tensor(targets).unsqueeze(0)
         return clips, flows, targets
 
     
