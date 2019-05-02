@@ -1,11 +1,17 @@
 ### https://github.com/Rhythmblue/i3d_finetune/issues/2
 
 import os
+import re
 import numpy as np
 import cv2 # to do flow preprocessing
 from glob import glob
 from tqdm import tqdm
 
+
+
+def get_frame_num(frame):
+    filename = os.path.splitext(os.path.basename(frame))[0]
+    return re.sub("\D", "", filename)
 
 def compute_TVL1(prev, curr, bound=15):
     """Compute the TV-L1 optical flow."""
@@ -22,7 +28,7 @@ def compute_TVL1(prev, curr, bound=15):
 
 def cal_for_frames(dir):
     frames = glob(os.path.join(dir, '*.jpg'))
-    frames.sort()
+    frames = sorted(frames, key=get_frame_num)
     
     flow = []
     prev = cv2.imread(frames[0])
@@ -41,21 +47,20 @@ def cal_for_frames(dir):
     return flow
 
 def cal_for_frames(dir):
-    basename =os.path.basename(dir)
-    num = int(basename[-6:])
     flowdir=os.path.join(dir, 'flow')
     if not os.path.exists(flowdir): 
         os.mkdir(flowdir)
         
     frames = glob(os.path.join(dir, '*.jpg'))
-    frames.sort()
+    frames = sorted(frames, key=get_frame_num)
     prev = cv2.imread(frames[0])
     shape = prev.shape
     prev = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
     
     for i, frame_curr in enumerate(tqdm(frames)):
-        name=os.path.join(flowdir, basename[:-6]+'{0:06d}_flow.jpg'.format(num+i))
-        if os.path.exists(name):
+        name=os.path.splitext(frame_curr)[0]
+        path=os.path.join(name, '_flow.jpg')
+        if os.path.exists(path):
             continue
         curr = cv2.imread(frame_curr)
         curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
@@ -64,5 +69,5 @@ def cal_for_frames(dir):
         img = np.dstack((tmp_flow.astype(np.uint8), tmp))
         prev = curr
         
-        plt.imsave(name, img)
+        cv2.imwrite(path, img)
     return 

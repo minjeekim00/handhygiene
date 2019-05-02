@@ -187,10 +187,11 @@ class HandHygiene(I3DDataset):
         coords= self.samples[1][index]
         
         if self.temporal_transform is not None:
-            findices = self.temporal_transform(findices)
+            findices, coords = self.temporal_transform(findices, coords)
         clips, flows = self.loader(findices, coords)
          
         if self.spatial_transform is not None:
+            self.spatial_transform.randomize_parameters()
             clips = [self.spatial_transform(img) for img in clips]
             flows = [self.spatial_transform(img) for img in flows]
         clips = torch.stack(clips).permute(1, 0, 2, 3)
