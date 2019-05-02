@@ -53,6 +53,10 @@ def cal_for_frames(dir):
         
     frames = glob(os.path.join(dir, '*.jpg'))
     frames = sorted(frames, key=get_frame_num)
+    fframes = glob(os.path.join(dir, '*.jpg'))
+    if len(frames) == len(fframes):
+        return
+    
     prev = cv2.imread(frames[0])
     shape = prev.shape
     prev = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)

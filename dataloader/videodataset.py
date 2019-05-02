@@ -1,7 +1,9 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets import DatasetFolder
-from torchvision.datasets.folder import *
+from torchvision.datasets.folder import find_classes
+from torchvision.datasets.folder import IMG_EXTENSIONS
+from torchvision.datasets.folder import has_file_allowed_extension
 
 import os
 import numpy as np
