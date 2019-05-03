@@ -54,7 +54,7 @@ def get_models(num_classes, feature_extract):
 
 
 
-def train(models, dataloders, optimizer, num_epochs=50): 
+def train(models, dataloaders, optimizer, criterion, device, num_epochs=50): 
     since = time.time()
     i3d_rgb, i3d_flow = models
     best_model_wts = {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict()}
@@ -72,7 +72,7 @@ def train(models, dataloders, optimizer, num_epochs=50):
             running_loss = 0.0
             running_corrects = {'rgb':0, 'flow':0, 'joint':0}
             
-            for i, (samples) in enumerate(dataloders[phase]):
+            for i, (samples) in enumerate(dataloaders[phase]):
                 iterations[phase] += 1
                 rgbs = samples[0] #BCDHW
                 flows = samples[1]
