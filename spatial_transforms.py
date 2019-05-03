@@ -254,7 +254,6 @@ class CornerCrop(object):
 
 class RandomHorizontalFlip(object):
     """Horizontally flip the given PIL.Image randomly with a probability of 0.5."""
-
     def __call__(self, img):
         """
         Args:
@@ -366,3 +365,4 @@ class MultiScaleRandomCrop(object):
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
         self.tl_x = random.random()
         self.tl_y = random.random()
+        

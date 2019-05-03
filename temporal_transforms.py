@@ -108,6 +108,8 @@ class TemporalCenterCrop(object):
         out = frame_indices[begin_index:end_index]
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
+        out_crd['torso'][begin_index:end_index]
+        out_crd['people'][begin_index:end_index]
         
         for i, index in enumerate(out):
             if len(out) >= self.size:

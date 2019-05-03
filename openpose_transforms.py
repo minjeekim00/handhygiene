@@ -119,31 +119,43 @@ class CropTorso(object):
         pass
     
     
+class MultiScaleTorsoRandomCrop(CropTorso):
     
-class MultiScaleROIRandomCrop(object):
-
     def __init__(self, scales, size, interpolation=Image.BILINEAR):
+        super(MultiScaleTorsoRandomCrop, self).__init__(size, interpolation)
         self.scales = scales
-        self.size = size
-        self.interpolation = interpolation
+            
+            
+    def __call__(self, img, coords, index):
+        """
+        Args:
+            img (PIL.Image): Image to be scaled.
+        Returns:
+            PIL.Image: Rescaled image.
+        """
+        
+        windows = self.get_windows(coords)
+        rois = self.calc_roi(windows)
+        
+        roi = rois[index]
+        x, y, w, h = roi
+        
+        if isinstance(self.size, int):
+            crop_size_w = int(w * self.scale)
+            crop_size_h = int(h * self.scale)
 
-    def __call__(self, img):
-        min_length = min(img.size[0], img.size[1])
-        crop_size = int(min_length * self.scale)
+            x -= self.tl_x * np.abs(w-crop_size_w)
+            y -= self.tl_y * np.abs(h-crop_size_h)
+            x2 = x + crop_size_w
+            y2 = y + crop_size_h
 
-        image_width = img.size[0]
-        image_height = img.size[1]
-
-        x1 = self.tl_x * (image_width - crop_size)
-        y1 = self.tl_y * (image_height - crop_size)
-        x2 = x1 + crop_size
-        y2 = y1 + crop_size
-
-        img = img.crop((x1, y1, x2, y2))
-
-        return img.resize((self.size, self.size), self.interpolation)
-
+            img = img.crop((x, y, x2, y2))
+            return img.resize((self.size, self.size), self.interpolation)
+        
+        
     def randomize_parameters(self):
-        self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
+        self.scale = self.scales[random.randint(0, len(self.scales)-1)]
+        print(self.scale)
         self.tl_x = random.random()
-        self.tl_y = random.random()
+        self.tl_y = random.random()        
+    

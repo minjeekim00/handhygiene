@@ -92,6 +92,7 @@ class HandHygiene(I3DDataset):
         clips, flows = self.loader(findices, coords)
         
         if self.openpose_transform is not None:
+            self.openpose_transform.randomize_parameters()
             clips = [self.openpose_transform(img, coords, i) for i, img in enumerate(clips)]
             flows = [self.openpose_transform(img, coords, i) for i, img in enumerate(flows)]
             

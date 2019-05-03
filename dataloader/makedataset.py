@@ -37,8 +37,9 @@ def make_hh_dataset(dir, class_to_idx, df, data):
                 
             item = [row for row in data if row['imgpath']==fname][0]
             people = item['people']
+            npeople = np.array(people).shape[0]
             torso = item['torso']
-            npeople = len(item['people'])
+            
             tidxs = df[df['imgpath']==fname]['targets'].values[0] # target idx
             tidxs = [int(t) for t in tidxs.strip().split(',')]
             nidxs = list(range(npeople))
@@ -65,7 +66,7 @@ def make_hh_dataset(dir, class_to_idx, df, data):
                                   .format(fname, len(people[nidx]), len(frames), nidx))
                         print(people[nidx])
                         continue
-
+                    
                     fnames.append(os.path.join(dir, label, fname))
                     coords.append({'people':people[nidx], 'torso':torso[nidx]})
                     labels.append('notclean')
