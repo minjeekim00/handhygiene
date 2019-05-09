@@ -8,10 +8,13 @@ class LoopPadding(object):
         self.size = size
 
     def __call__(self, frame_indices, coords):
-        print("loop padding")
+        #print("loop padding...")
         out = frame_indices
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
+        
+        out, our_crd = self.__sizecheck__(out, out_crd)
+        
         for i, index in enumerate(out):
             if len(out) >= self.size:
                 break
@@ -19,18 +22,30 @@ class LoopPadding(object):
             out_crd['torso'].append(coords['torso'][i])
             out_crd['people'].append(coords['people'][i])
         return (out, out_crd)
+                
+    def __sizecheck__(self, out, out_crd):
+        if len(out) >= self.size:
+            transforms = TemporalRandomChoice([
+                TemporalBeginCrop(self.size),
+                TemporalRandomCrop(self.size),
+                TemporalCenterCrop(self.size)])
+            out, out_crd = transforms(out, out_crd)
+        return out, out_crd
 
     
-class MirrorLoopPadding(object):
+class MirrorLoopPadding(LoopPadding):
     
     def __init__(self, size):
+        super(MirrorLoopPadding, self).__init__(size)
         self.size = size
 
     def __call__(self, frame_indices, coords):
-        print("mirror loop padding")
+        #print("mirror loop padding...")
         out = frame_indices
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
+        
+        out, our_crd = self.__sizecheck__(out, out_crd)
         
         for i in range(100):
             out += self.__getmirror__(frame_indices, i)
@@ -64,7 +79,7 @@ class TemporalBeginCrop(object):
 
     def __call__(self, frame_indices, coords):
         
-        print("temporal begin crop")
+        #print("begin cropping ...")
         out = frame_indices[:self.size]
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
@@ -100,7 +115,8 @@ class TemporalCenterCrop(object):
             list: Cropped frame indices.
         """
         
-        print("temporal center crop")
+        #print("center cropping ...")
+        
         center_index = len(frame_indices) // 2
         begin_index = max(0, center_index - (self.size // 2))
         end_index = min(begin_index + self.size, len(frame_indices))
@@ -140,7 +156,7 @@ class TemporalRandomCrop(object):
             list: Cropped frame indices.
         """
 
-        print("temporal random crop")
+        #print("random cropping ...")
         rand_end = max(0, len(frame_indices) - self.size - 1)
         begin_index = random.randint(0, rand_end)
         end_index = min(begin_index + self.size, len(frame_indices))

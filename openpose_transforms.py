@@ -155,7 +155,6 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         
     def randomize_parameters(self):
         self.scale = self.scales[random.randint(0, len(self.scales)-1)]
-        print(self.scale)
         self.tl_x = random.random()
         self.tl_y = random.random()        
     
