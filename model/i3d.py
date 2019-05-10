@@ -74,7 +74,8 @@ class I3D_binary(I3D):
         self.dropout = torch.nn.Dropout(dropout_prob)
         
         self.conv3d_0c_1x1 = self.modify_classifier()
-        self.sigmoid = nn.Sigmoid()
+        #self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Sigmoid()
         
     def modify_classifier(self):
         last_layer = Unit3Dpy(in_channels=1024,
@@ -118,5 +119,6 @@ class I3D_binary(I3D):
         out = out.squeeze(3)
         out = out.mean(2)
         out_logits = out
-        out = self.sigmoid(out_logits)
+        #out = self.sigmoid(out_logits)
+        out = self.softmax(out_logits)
         return out, out_logits

@@ -19,12 +19,13 @@ rgb_weights_path = 'model/model_rgb.pth'
 flow_weights_path = 'model/model_flow.pth'
 
 
-def set_param_requires_grad(model, feature_extracting):
+def set_param_requires_grad(model, feature_extracting, training_num):
     if feature_extracting:
-        for param in model.parameters():
-            param.requires_grad = False
+        for i, param in enumerate(model.parameters()):
+            if training_num >= i:
+                param.requires_grad = False
     
-def get_models(num_classes, feature_extract):
+def get_models(num_classes, feature_extract, training_num=0):
     
     def modify_last_layer(last_layer, out_channels):
         #last_layer
@@ -39,13 +40,13 @@ def get_models(num_classes, feature_extract):
     
     i3d_rgb = I3D(num_classes=400, modality='rgb', dropout_prob=0.5)
     i3d_rgb.load_state_dict(torch.load(rgb_weights_path))
-    set_param_requires_grad(i3d_rgb, feature_extract)
+    set_param_requires_grad(i3d_rgb, feature_extract, training_num)
     i3d_rgb.conv3d_0c_1x1 = modify_last_layer(i3d_rgb.conv3d_0c_1x1, out_channels=num_classes)
     i3d_rgb.softmax = torch.nn.Sigmoid()
 
     i3d_flow = I3D(num_classes=400, modality='flow', dropout_prob=0.5)
     i3d_flow.load_state_dict(torch.load(flow_weights_path))
-    set_param_requires_grad(i3d_flow, feature_extract)
+    set_param_requires_grad(i3d_flow, feature_extract, training_num)
     i3d_flow.conv3d_0c_1x1 = modify_last_layer(i3d_flow.conv3d_0c_1x1, out_channels=num_classes)
     i3d_flow.softmax = torch.nn.Sigmoid()
     
@@ -64,8 +65,8 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
         
         for phase in ['train', 'val']:
             if phase == 'train':
-                scheduler['rgb'].step()
-                scheduler['flow'].step()
+                #scheduler['rgb'].step()
+                #scheduler['flow'].step()
                 i3d_rgb.train()
                 i3d_flow.train()
             else:
@@ -142,9 +143,9 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                                         'validation_joint': valid_epoch_joint_acc}, epoch)
         
         torch.save(i3d_rgb.state_dict(), 
-               os.path.join('./weights/{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_rgb', epoch)))
+               os.path.join('./weights/{}/{}_{}_epoch_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', epoch)))
         torch.save(i3d_flow.state_dict(), 
-               os.path.join('./weights/{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_flow', epoch)))
+               os.path.join('./weights/{}/{}_{}_epoch_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', epoch)))
     
         print('Epoch [{}/{}] train loss: {:.4f} acc: {:.4f} ' 'valid loss: {:.4f} acc: {:.4f}'.format(
                         epoch, num_epochs - 1,
@@ -156,8 +157,8 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
     i3d_rgb.load_state_dict(best_model_rgb_wts)
     i3d_flow.load_state_dict(best_model_flow_wts)
     torch.save(i3d_rgb.state_dict(), 
-               os.path.join('./weights/{}_{}_bestiters_{}.pth'.format('handhygiene', 'i3d_rgb', best_iters)))
+               os.path.join('./weights/{}/{}_{}_bestiters_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', best_iters)))
     torch.save(i3d_flow.state_dict(), 
-               os.path.join('./weights/{}_{}_bestiters_{}.pth'.format('handhygiene', 'i3d_flow', best_iters)))
+               os.path.join('./weights/{}/{}_{}_bestiters_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', best_iters)))
     writer.close()
-    return i3d_rgb, i3d_flow
+    return 
