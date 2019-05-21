@@ -6,6 +6,7 @@ import numbers
 import collections
 import numpy as np
 import torch
+
 from PIL import Image, ImageOps
 try:
     import accimage
@@ -366,3 +367,32 @@ class MultiScaleRandomCrop(object):
         self.tl_x = random.random()
         self.tl_y = random.random()
         
+
+class RandomRotation(object):
+    
+    def __init__(self, degrees, resample=False, expand=False, center=None):
+        if isinstance(degrees, numbers.Number):
+            if degrees < 0:
+                raise ValueError("If degrees is a single number, it must be positive.")
+            self.degrees = (-degrees, degrees)
+        else:
+            if len(degrees) != 2:
+                raise ValueError("If degrees is a sequence, it must be of len 2.")
+            self.degrees = degrees
+
+        self.resample = resample
+        self.expand = expand
+        self.center = center
+
+    @staticmethod
+    def get_params(degrees):
+        angle = random.uniform(degrees[0], degrees[1])
+        return angle
+
+    def __call__(self, img):
+        angle = self.get_params(self.degrees)
+        
+        return img.rotate(angle, self.resample, self.expand, self.center)
+    
+    def randomize_parameters(self):
+        pass
