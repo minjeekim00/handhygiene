@@ -29,7 +29,7 @@ class CropTorso(object):
         self.size = size
         self.interpolation = interpolation
 
-    def __call__(self, img, coords, index):
+    def __call__(self, img, flow, coords, index):
         """
         Args:
             img (PIL.Image): Image to be scaled.
@@ -44,19 +44,23 @@ class CropTorso(object):
         x, y, w, h = roi
         if isinstance(self.size, int):
             img = img.crop((x, y, (x+w), (y+h)))
+            flow = flow.crop((x, y, (x+w), (y+h)))
             w, h = img.size
             if (w <= h and w == self.size) or (h <= w and h == self.size):
-                return img
+                return (img, flow)
             if w < h:
                 ow = self.size
                 oh = int(self.size * h / w)
-                return img.resize((ow, oh), self.interpolation)
+                return (img.resize((ow, oh), self.interpolation),
+                        flow.resize((ow, oh), self.interpolation))
             else:
                 oh = self.size
                 ow = int(self.size * w / h)
-                return img.resize((ow, oh), self.interpolation)
+                return (img.resize((ow, oh), self.interpolation),
+                        flow.resize((ow, oh), self.interpolation))
         else:
-            return img.resize(self.size, self.interpolation)
+            return (img.resize(self.size, self.interpolation),
+                    flow.resize(self.size, self.interpolation))
 
         
     def get_windows(self, coords):
@@ -126,7 +130,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         self.scales = scales
             
             
-    def __call__(self, img, coords, index):
+    def __call__(self, img, flow, coords, index):
         """
         Args:
             img (PIL.Image): Image to be scaled.
@@ -150,7 +154,9 @@ class MultiScaleTorsoRandomCrop(CropTorso):
             y2 = y + crop_size_h
 
             img = img.crop((x, y, x2, y2))
-            return img.resize((self.size, self.size), self.interpolation)
+            flow = flow.crop((x, y, x2, y2))
+            return (img.resize((self.size, self.size), self.interpolation),
+                    flow.resize((self.size, self.size), self.interpolation))
         
         
     def randomize_parameters(self):

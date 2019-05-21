@@ -59,6 +59,7 @@ class HandHygiene(I3DDataset):
                  spatial_temporal_transform=None,
                  openpose_transform=None,
                  target_transform=None,
+                 custom_augmentation=False,
                  preprocess=False, loader=default_loader, num_workers=1):
 
         super(HandHygiene, self).__init__(root, split, clip_len,
@@ -77,6 +78,7 @@ class HandHygiene(I3DDataset):
         self.samples = make_dataset(folder, class_to_idx, df, keypoints)
         self.spatial_temporal_transform = spatial_temporal_transform
         self.openpose_transform = openpose_transform
+        self.custom_augmentation = custom_augmentation
         ## check optical flow
         if preprocess:
             self.preprocess(num_workers)
@@ -95,18 +97,27 @@ class HandHygiene(I3DDataset):
         
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
-            clips = [self.openpose_transform(img, coords, i) for i, img in enumerate(clips)]
-            flows = [self.openpose_transform(img, coords, i) for i, img in enumerate(flows)]
+            streams = [self.openpose_transform(img, flow, coords, i)
+                       for i, (img, flow) in enumerate(zip(clips, flows))]
+            clips = [stream[0] for stream in streams]
+            flows = [stream[1] for stream in streams]
         
-        if self.spatial_temporal_transform is not None:
-            self.spatial_temporal_transform.randomize_parameters()
-            clips = self.spatial_temporal_transform(clips)
-            flows = self.spatial_temporal_transform(flows)
+        ######################### inflate augmentation
+        if not self.custom_augmentation:
+            if self.spatial_temporal_transform is not None:
+                self.spatial_temporal_transform.randomize_parameters()
+                streams = self.spatial_temporal_transform(clips, flows)
+                clips = streams[0]
+                flows = streams[1]
+
+            if self.spatial_transform is not None:
+                self.spatial_transform.randomize_parameters()
+                clips = [self.spatial_transform(img) for img in clips]
+                flows = [self.spatial_transform(img) for img in flows]
+        else:
+            clips, flows = augment_data(clips, flows)
+        ###############################################    
             
-        if self.spatial_transform is not None:
-            self.spatial_transform.randomize_parameters()
-            clips = [self.spatial_transform(img) for img in clips]
-            flows = [self.spatial_transform(img) for img in flows]
         clips = torch.stack(clips).permute(1, 0, 2, 3)
         flows = [flow[:-1,:,:] for flow in flows]
         flows = torch.stack(flows).permute(1, 0, 2, 3)
@@ -118,4 +129,16 @@ class HandHygiene(I3DDataset):
         targets = torch.tensor(targets).unsqueeze(0)
         return clips, flows, targets
 
-    
+    def augment_data(self, clips, flows):
+        if self.spatial_temporal_transform is not None:
+            self.spatial_temporal_transform.randomize_parameters()
+            streams = self.spatial_temporal_transform(clips, flows)
+            clips = streams[0]
+            flows = streams[1]
+
+        if self.spatial_transform is not None:
+            self.spatial_transform.randomize_parameters()
+            clips = [self.spatial_transform(img) for img in clips]
+            flows = [self.spatial_transform(img) for img in flows]
+            
+        return clips, flows
