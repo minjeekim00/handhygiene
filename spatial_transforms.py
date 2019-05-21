@@ -7,7 +7,7 @@ import collections
 import numpy as np
 import torch
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance
 try:
     import accimage
 except ImportError:
@@ -367,7 +367,81 @@ class MultiScaleRandomCrop(object):
         self.tl_x = random.random()
         self.tl_y = random.random()
         
+        
+class Lambda(object):
+    def __init__(self, lambd):
+        assert callable(lambd), repr(type(lambd).__name__) + " object is not callable"
+        self.lambd = lambd
 
+    def __call__(self, img):
+        return self.lambd(img)
+
+    def randomize_parameters(self):
+        pass
+    
+    
+    
+class ColorJitter(object):
+    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
+        self.brightness = self._check_input(brightness, 'brightness')
+        self.contrast = self._check_input(contrast, 'contrast')
+        self.saturation = self._check_input(saturation, 'saturation')
+        self.hue = self._check_input(hue, 'hue', center=0, bound=(-0.5, 0.5),
+                                     clip_first_on_zero=False)
+
+    def _check_input(self, value, name, center=1, bound=(0, float('inf')), clip_first_on_zero=True):
+        if isinstance(value, numbers.Number):
+            if value < 0:
+                raise ValueError("If {} is a single number, it must be non negative.".format(name))
+            value = [center - value, center + value]
+            if clip_first_on_zero:
+                value[0] = max(value[0], 0)
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            if not bound[0] <= value[0] <= value[1] <= bound[1]:
+                raise ValueError("{} values should be between {}".format(name, bound))
+        else:
+            raise TypeError("{} should be a single number or a list/tuple with lenght 2.".format(name))
+
+        # if value is 0 or (1., 1.) for brightness/contrast/saturation
+        # or (0., 0.) for hue, do nothing
+        if value[0] == value[1] == center:
+            value = None
+        return value
+
+    @staticmethod
+    def get_params(brightness, contrast, saturation, hue):
+        transforms = []
+        
+        if brightness is not None:
+            brightness_factor = random.uniform(brightness[0], brightness[1])
+            transforms.append(Lambda(lambda img: ImageEnhance.Brightness(img).enhance(brightness_factor)))
+
+        if contrast is not None:
+            contrast_factor = random.uniform(contrast[0], contrast[1])
+            transforms.append(Lambda(lambda img: ImageEnhance.Brightness(img).enhance(contrast_factor)))
+
+        if saturation is not None:
+            saturation_factor = random.uniform(saturation[0], saturation[1])
+            transforms.append(Lambda(lambda img: ImageEnhance.Brightness(img).enhance(saturation_factor)))
+
+        if hue is not None:
+            hue_factor = random.uniform(hue[0], hue[1])
+            transforms.append(Lambda(lambda img: ImageEnhance.Brightness(img).enhance(hue_factor)))
+
+        random.shuffle(transforms)
+        transform = Compose(transforms)
+
+        return transform
+
+    def __call__(self, img):
+        transform = self.get_params(self.brightness, self.contrast,
+                                    self.saturation, self.hue)
+        return transform(img)
+    
+    def randomize_parameters(self):
+        pass
+    
+    
 class RandomRotation(object):
     
     def __init__(self, degrees, resample=False, expand=False, center=None):
