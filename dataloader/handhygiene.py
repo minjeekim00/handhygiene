@@ -99,16 +99,18 @@ class HandHygiene(I3DDataset):
                        for i, (img, flow) in enumerate(zip(clips, flows))]
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
+            
         if self.spatial_temporal_transform is not None:
             self.spatial_temporal_transform.randomize_parameters()
             streams = self.spatial_temporal_transform(clips, flows)
             clips = streams[0]
             flows = streams[1]
+            
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             clips = [self.spatial_transform(img) for img in clips]
             flows = [self.spatial_transform(img) for img in flows]
-            
+        
         clips = torch.stack(clips).permute(1, 0, 2, 3)
         flows = [flow[:-1,:,:] for flow in flows]
         flows = torch.stack(flows).permute(1, 0, 2, 3)
@@ -119,3 +121,6 @@ class HandHygiene(I3DDataset):
             
         targets = torch.tensor(targets).unsqueeze(0)
         return clips, flows, targets
+        #return clips, flows, targets, coords
+
+    

@@ -60,3 +60,21 @@ class TemporalRandomRotation(RandomRotation):
             out_imgs.append(img.rotate(angle, self.resample, self.expand, self.center))
             out_flows.append(flow.rotate(angle, self.resample, self.expand, self.center)) 
         return out_imgs, out_flows
+    
+        
+class TemporalRandomHorizontalFlip(RandomHorizontalFlip):
+    def __init__(self):
+        super(TemporalRandomHorizontalFlip, self).__init__()
+        
+    def __call__(self, imgs, flows):
+        out_imgs=[]
+        out_flows=[]
+        if self.p < 0.5:
+            for img, flow in zip(imgs, flows):
+                out_imgs.append(img.transpose(Image.FLIP_LEFT_RIGHT))
+                out_flows.append(flow.transpose(Image.FLIP_LEFT_RIGHT))
+        return out_imgs, out_flows
+
+    def randomize_parameters(self):
+        self.p = random.random()   
+    
