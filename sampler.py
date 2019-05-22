@@ -82,10 +82,7 @@ class MultiSampler(Sampler):
         n_repeats = self.desired_samples / len(self.dataset)
         sample_list = []
         for i in tqdm(range(math.floor(n_repeats))):
-            print("i = {}".format(i))
-            print("sample list length = {}".format(len(sample_list)))
-            for j in tqdm(range(len(self.dataset))):
-                print("j = {}".format(j))
+            for j in range(len(self.dataset)):
                 clips, flows, labels = self.dataset[j]
                 if j == 0:
                     print(clips.shape, flows.shape, labels.shape)
@@ -97,8 +94,6 @@ class MultiSampler(Sampler):
             i = random.randint(0, len(self.dataset)+1)
             sample_list.append(self.dataset[i])
         self.samples = tuple(sample_list)
-        
-        print(self.samples)
         return self.samples
 
     def __iter__(self):

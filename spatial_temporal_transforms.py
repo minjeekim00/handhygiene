@@ -30,6 +30,7 @@ class TemporalColorJitter(ColorJitter):
                                      clip_first_on_zero=False)
         
     def __call__(self, imgs, flows):
+        #print("color jittering")
         transform = self.get_params(self.brightness, self.contrast,
                                     self.saturation, self.hue)
         out_imgs=[]
@@ -53,6 +54,7 @@ class TemporalRandomRotation(RandomRotation):
             self.degrees = degrees
         
     def __call__(self, imgs, flows):
+        #print("random rotating")
         angle = self.get_params(self.degrees)
         out_imgs=[]
         out_flows=[]
@@ -67,12 +69,18 @@ class TemporalRandomHorizontalFlip(RandomHorizontalFlip):
         super(TemporalRandomHorizontalFlip, self).__init__()
         
     def __call__(self, imgs, flows):
+        
+        #print("random horizontal flipping")
         out_imgs=[]
         out_flows=[]
-        if self.p < 0.5:
-            for img, flow in zip(imgs, flows):
+        for img, flow in zip(imgs, flows):
+            if self.p < 0.5:
                 out_imgs.append(img.transpose(Image.FLIP_LEFT_RIGHT))
                 out_flows.append(flow.transpose(Image.FLIP_LEFT_RIGHT))
+            else:
+                out_imgs.append(img)
+                out_flows.append(flow)
+
         return out_imgs, out_flows
 
     def randomize_parameters(self):
