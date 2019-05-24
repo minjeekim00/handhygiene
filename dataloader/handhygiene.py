@@ -56,7 +56,6 @@ class HandHygiene(I3DDataset):
     def __init__(self, root, split='train', clip_len=16, 
                  spatial_transform=None,
                  temporal_transform=None,
-                 spatial_temporal_transform=None,
                  openpose_transform=None,
                  target_transform=None,
                  preprocess=False, loader=default_loader, num_workers=1):
@@ -75,7 +74,6 @@ class HandHygiene(I3DDataset):
         
         self.loader = loader
         self.samples = make_dataset(folder, class_to_idx, df, keypoints)
-        self.spatial_temporal_transform = spatial_temporal_transform
         self.openpose_transform = openpose_transform
         ## check optical flow
         if preprocess:
@@ -99,12 +97,6 @@ class HandHygiene(I3DDataset):
                        for i, (img, flow) in enumerate(zip(clips, flows))]
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
-            
-        if self.spatial_temporal_transform is not None:
-            self.spatial_temporal_transform.randomize_parameters()
-            streams = self.spatial_temporal_transform(clips, flows)
-            clips = streams[0]
-            flows = streams[1]
             
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()

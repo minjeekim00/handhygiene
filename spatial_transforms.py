@@ -409,7 +409,8 @@ class ColorJitter(object):
         return value
 
     @staticmethod
-    def get_params(brightness, contrast, saturation, hue):
+    def get_params(brightness, contrast, saturation, hue, seed):
+        random.seed(seed)
         transforms = []
         
         if brightness is not None:
@@ -435,11 +436,11 @@ class ColorJitter(object):
 
     def __call__(self, img):
         transform = self.get_params(self.brightness, self.contrast,
-                                    self.saturation, self.hue)
+                                    self.saturation, self.hue, self.seed)
         return transform(img)
     
     def randomize_parameters(self):
-        pass
+        self.seed = int(random.random()*1000)
     
     
 class RandomRotation(object):
@@ -459,14 +460,14 @@ class RandomRotation(object):
         self.center = center
 
     @staticmethod
-    def get_params(degrees):
+    def get_params(degrees, seed):
+        random.seed(seed)
         angle = random.uniform(degrees[0], degrees[1])
         return angle
 
     def __call__(self, img):
-        angle = self.get_params(self.degrees)
-        
+        angle = self.get_params(self.degrees, self.seed)
         return img.rotate(angle, self.resample, self.expand, self.center)
     
     def randomize_parameters(self):
-        pass
+        self.seed = int(random.random()*1000)

@@ -84,8 +84,6 @@ class MultiSampler(Sampler):
         for i in tqdm(range(math.floor(n_repeats))):
             for j in range(len(self.dataset)):
                 clips, flows, labels = self.dataset[j]
-                if j == 0:
-                    print(clips.shape, flows.shape, labels.shape)
                 sample_list.append(self.dataset[j])
         # add the left over samples
         
