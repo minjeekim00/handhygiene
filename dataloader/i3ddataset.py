@@ -59,29 +59,31 @@ class I3DDataset(VideoFolder):
         if preprocess:
             self.preprocess(num_workers)
 
+            
     def __getitem__(self, index):
         # loading and preprocessing.
         fnames= self.samples[0][index]
         findices = get_framepaths(fnames)
+        target = self.samples[1][index]
         
         if self.temporal_transform is not None:
             findices = self.temporal_transform(findices)
         clips, flows = self.loader(findices)
          
         if self.spatial_transform is not None:
+            self.spatial_transform.randomize_parameters()
             clips = [self.spatial_transform(img) for img in clips]
             flows = [self.spatial_transform(img) for img in flows]
+        
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        target = torch.tensor(target).unsqueeze(0)
+       
         clips = torch.stack(clips).permute(1, 0, 2, 3)
         flows = [flow[:-1,:,:] for flow in flows]
         flows = torch.stack(flows).permute(1, 0, 2, 3)
-
-        targets = self.samples[1][index]
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-            
-        targets = torch.tensor(targets).unsqueeze(0)
-        return clips, flows, targets
-    
+        
+        return clips, flows, target
     
     def preprocess(self, num_workers):
         from multiprocessing import Pool

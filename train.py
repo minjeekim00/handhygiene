@@ -41,6 +41,8 @@ def get_models(num_classes, feature_extract, training_num=0):
     i3d_rgb = I3D(num_classes=400, modality='rgb', dropout_prob=0.5)
     i3d_rgb.load_state_dict(torch.load(rgb_weights_path))
     set_param_requires_grad(i3d_rgb, feature_extract, training_num)
+    #### for 1 channel
+    i3d_rgb.conv3d_1a_7x7.conv3d = nn.Conv3d(1, 64, kernel_size=(7, 7, 7), stride=(2, 2, 2), bias=False)
     i3d_rgb.conv3d_0c_1x1 = modify_last_layer(i3d_rgb.conv3d_0c_1x1, out_channels=num_classes)
     i3d_rgb.softmax = torch.nn.Sigmoid()
 

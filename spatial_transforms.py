@@ -6,6 +6,7 @@ import numbers
 import collections
 import numpy as np
 import torch
+import cv2
 
 from PIL import Image, ImageOps, ImageEnhance
 try:
@@ -471,3 +472,28 @@ class RandomRotation(object):
     
     def randomize_parameters(self):
         self.seed = int(random.random()*1000)
+    
+    
+class ExtractSkinColor(object):
+    """
+       Extract skin color by converting RGB to HSV, 
+       thresholding Skin color array.
+       Shape: (x, y, 3) ==> (x, y)
+    """
+    def __init__(self):
+        self.lower = np.array([0, 10, 60])
+        self.upper = np.array([15, 150, 255])
+    
+    def __call__(self, img):
+        img = np.array(img)
+        blur = cv2.GaussianBlur(img, (3,3), 0)
+        hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
+        mask = cv2.inRange(hsv, self.lower, self.upper)
+        blur = cv2.medianBlur(mask, 5)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
+        hsv_d = cv2.dilate(blur, kernel)
+        return Image.fromarray(hsv_d)
+
+    def randomize_parameters(self):
+        pass
+        
