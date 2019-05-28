@@ -70,7 +70,8 @@ def make_hh_dataset(dir, class_to_idx, df, data):
                     fnames.append(os.path.join(dir, label, fname))
                     coords.append({'people':people[nidx], 'torso':torso[nidx]})
                     labels.append('notclean')
-                    
+    
+    print('Number of {} people: {:d}'.format(dir, len(fnames)))
     return fnames, coords, labels
 
 def target_dataframe(path='./data/label.csv'):
