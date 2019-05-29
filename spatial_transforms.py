@@ -485,14 +485,15 @@ class ExtractSkinColor(object):
         self.upper = np.array([15, 150, 255])
     
     def __call__(self, img):
+        ## TODO: change temporal fix to detect flow image
         img = np.array(img)
-        blur = cv2.GaussianBlur(img, (3,3), 0)
-        hsv = cv2.cvtColor(blur, cv2.COLOR_RGB2HSV)
+        #blur = cv2.GaussianBlur(img, (3,3), 0)
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
         mask = cv2.inRange(hsv, self.lower, self.upper)
-        blur = cv2.medianBlur(mask, 5)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
-        hsv_d = cv2.dilate(blur, kernel)
-        return Image.fromarray(hsv_d)
+        #blur = cv2.medianBlur(mask, 5)
+        #kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
+        #hsv_d = cv2.dilate(blur, kernel)
+        return Image.fromarray(mask)
 
     def randomize_parameters(self):
         pass

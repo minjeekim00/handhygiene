@@ -96,12 +96,20 @@ class HandHygiene(I3DDataset):
                        for i, (img, flow) in enumerate(zip(clips, flows))]
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
-            
+        
+        #### for 1 channel
+        import sys
+        sys.path.append("/data/private/minjee-video/handhygiene/")
+        from spatial_transforms import ExtractSkinColor
+        t = ExtractSkinColor()
+        clips = [t(img) for img in clips]
+        ######################################
+        
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             clips = [self.spatial_transform(img) for img in clips]
             flows = [self.spatial_transform(img) for img in flows]
-            
+        
         target = self.samples[2][index]
         if self.target_transform is not None:
             target = self.target_transform(target)
@@ -110,6 +118,7 @@ class HandHygiene(I3DDataset):
         clips = torch.stack(clips).permute(1, 0, 2, 3)
         flows = [flow[:-1,:,:] for flow in flows]
         flows = torch.stack(flows).permute(1, 0, 2, 3)
+        
         return clips, flows, target
         #return clips, flows, target, coords
     

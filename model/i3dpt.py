@@ -174,6 +174,8 @@ class I3D(torch.nn.Module):
             in_channels = 3
         elif modality == 'flow':
             in_channels = 2
+        elif modality == 'grey':
+            in_channels = 1
         else:
             raise ValueError(
                 '{} not among known modalities [rgb|flow]'.format(modality))

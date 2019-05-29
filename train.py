@@ -15,8 +15,11 @@ logpath = os.path.join('./logs/', model_name)
 if not os.path.exists(logpath): os.mkdir(logpath)
 writer = SummaryWriter(logpath)
 
-rgb_weights_path = 'model/model_rgb.pth'
-flow_weights_path = 'model/model_flow.pth'
+#rgb_weights_path = 'model/model_rgb.pth'
+#flow_weights_path = 'model/model_flow.pth'
+rgb_weights_path = 'weights/i3d/handhygiene_i3d_rgb_epoch_99.pth'
+flow_weights_path = 'weights/i3d/handhygiene_i3d_flow_epoch_99.pth'
+
 
 
 def set_param_requires_grad(model, feature_extracting, training_num):
@@ -24,8 +27,16 @@ def set_param_requires_grad(model, feature_extracting, training_num):
         for i, param in enumerate(model.parameters()):
             if training_num >= i:
                 param.requires_grad = False
-    
-def get_models(num_classes, feature_extract, training_num=0):
+
+def change_key(ordereddict):
+    statedict = ordereddict.copy()
+    for i, key in enumerate(ordereddict.keys()):
+        key, value = statedict.popitem(False)
+        old = key
+        statedict[key.replace('module.', '') if key == old else key] = value
+    return statedict
+        
+def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=True):
     
     def modify_last_layer(last_layer, out_channels):
         #last_layer
@@ -35,19 +46,22 @@ def get_models(num_classes, feature_extract, training_num=0):
                          activation=None, 
                          use_bias=True, use_bn=False)
         branch_0 = torch.nn.Sequential(last_layer, conv2)
-
         return branch_0
     
-    i3d_rgb = I3D(num_classes=400, modality='rgb', dropout_prob=0.5)
-    i3d_rgb.load_state_dict(torch.load(rgb_weights_path))
+    #i3d_rgb = I3D(num_classes=400, modality='rgb', dropout_prob=0.5)
+    ### for grey
+    i3d_rgb = I3D(num_classes=400, modality='grey', dropout_prob=0.5)
+    if load_pt_weights:
+        statedict = change_key(torch.load(rgb_weights_path))
+        i3d_rgb.load_state_dict(statedict)
     set_param_requires_grad(i3d_rgb, feature_extract, training_num)
-    #### for 1 channel
-    i3d_rgb.conv3d_1a_7x7.conv3d = nn.Conv3d(1, 64, kernel_size=(7, 7, 7), stride=(2, 2, 2), bias=False)
     i3d_rgb.conv3d_0c_1x1 = modify_last_layer(i3d_rgb.conv3d_0c_1x1, out_channels=num_classes)
     i3d_rgb.softmax = torch.nn.Sigmoid()
-
     i3d_flow = I3D(num_classes=400, modality='flow', dropout_prob=0.5)
-    i3d_flow.load_state_dict(torch.load(flow_weights_path))
+    
+    if load_pt_weights:
+        statedict = change_key(torch.load(flow_weights_path))
+        i3d_flow.load_state_dict(statedict)
     set_param_requires_grad(i3d_flow, feature_extract, training_num)
     i3d_flow.conv3d_0c_1x1 = modify_last_layer(i3d_flow.conv3d_0c_1x1, out_channels=num_classes)
     i3d_flow.softmax = torch.nn.Sigmoid()
