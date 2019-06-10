@@ -40,6 +40,11 @@ def get_flownames(fnames):
         ffnames.append(flow)
     return ffnames
 
+def check_cropped_dir(dir):
+    """ to check if the images in dir are temporally cropped from original data"""
+    basename = os.path.basename(dir)
+    return False if len(basename.split('_'))>3 else True
+
 class I3DDataset(VideoFolder):
         
     def __init__(self, root, split='train', clip_len=16, 
@@ -87,7 +92,8 @@ class I3DDataset(VideoFolder):
     
     def preprocess(self, num_workers):
         from multiprocessing import Pool
-        paths = [self.__getpath__(i) for i in range(self.__len__())]
+        paths = [self.__getpath__(i) for i in range(self.__len__()) 
+                 if check_cropped_dir(self.__getpath__(i))]
         pool = Pool(num_workers)
         pool.map(cal_for_frames, paths)
         return

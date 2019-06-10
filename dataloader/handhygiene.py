@@ -98,11 +98,11 @@ class HandHygiene(I3DDataset):
             flows = [stream[1] for stream in streams]
         
         #### for 1 channel
-        import sys
-        sys.path.append("/data/private/minjee-video/handhygiene/")
-        from spatial_transforms import ExtractSkinColor
-        t = ExtractSkinColor()
-        clips = [t(img) for img in clips]
+        #import sys
+        #sys.path.append("/data/private/minjee-video/handhygiene/")
+        #from spatial_transforms import ExtractSkinColor
+        #t = ExtractSkinColor()
+        #clips = [t(img) for img in clips]
         ######################################
         
         if self.spatial_transform is not None:
