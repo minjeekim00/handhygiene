@@ -17,7 +17,11 @@ from glob import glob
 
 
 def make_dataset(dir, class_to_idx, df, data):
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data)
+    exclusions = ['38_20190119_frames000643', 
+                  '40_20190208_frames026493',
+                  '34_20190110_frames066161',
+                  '34_20190110_frames111213']
+    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions)
     targets = labels_to_idx(labels)
     return [fnames, coords, targets]
 

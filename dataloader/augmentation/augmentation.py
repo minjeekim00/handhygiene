@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 from tqdm import tqdm
 from glob import glob
-
+import time
 
 
 def has_file_allowed_extension(filename, extensions):
@@ -73,8 +73,8 @@ class AugmentDataset():
         dirname = self.samples[0][index]
         if len(dirname.split('_')) > 3:
             return
-        #if '/notclean/' in dirname:
-        #    return
+        if '/notclean/' in dirname:
+            return
         list_frames = img_path_loader(dirname)
         nframes = len(list_frames)
         clip_len = self.clip_len
@@ -85,14 +85,16 @@ class AugmentDataset():
         with open(list_frames[0], 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            
             shape = np.array(img).shape
             
-            
+        np.random.seed(int(time.time()))
         if nframes > clip_len:
             size = nframes-clip_len+1
-            choices = np.random.choice(size, int(size/2), replace=False)
-            #print("choices: {}".format(choices))
+            if int(size) > int(int(clip_len)/2):
+                choices = np.random.choice(size, int(size/(4)), replace=False)
+            else:
+                choices = np.random.choice(size, int(size/4), replace=False)
+            print("dirname: {}, choicable size:{}/{},  choices: {}".format(os.path.basename(dirname), size, nframes, choices))
             for ch in choices:
                 if ch == 0:
                     continue

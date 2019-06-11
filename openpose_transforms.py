@@ -81,13 +81,17 @@ class CropTorso(object):
     
     
     def calc_margin(self, torso, track_window):
+        m = 20 # margin
         torso = np.array(torso)
         x, y, w, h = track_window
-
+        
+        if len(torso) == 0:
+            return (x-m, y-m, w+(m*2), h+(m*2))
+        
         ## min이나 max가 4, 7일때 (idx:2, 5)일 때
         min_x_idx = np.argmin(torso.T[0])
         max_x_idx = np.argmax(torso.T[0])
-        m = 20 # margin
+        
         x, y, w, h = x-m, y-m, w+(m*2), h+(m*2)
 
         if min_x_idx == 2 or min_x_idx == 5:
@@ -141,6 +145,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         windows = self.get_windows(coords)
         rois = self.calc_roi(windows)
         
+        print(len(rois), "index:{}".format(index))
         roi = rois[index]
         x, y, w, h = roi
         

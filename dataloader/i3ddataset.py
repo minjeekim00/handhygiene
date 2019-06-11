@@ -36,6 +36,9 @@ def get_flownames(fnames):
         dir = os.path.split(img)[0]
         tail = os.path.split(img)[1]
         name, ext = os.path.splitext(tail)
+        if len(dir.split('_'))>3: # for augmentated dir
+            start = int(dir.split('_')[-1])
+            dir = dir.replace('_{}'.format(start), '')
         flow = os.path.join(dir, 'flow', name+'_flow'+ext)
         ffnames.append(flow)
     return ffnames

@@ -47,6 +47,8 @@ def cal_for_frames(dir):
     return flow
 
 def cal_for_frames(dir):
+    if len(dir.split('_'))>3:
+        return
     flowdir=os.path.join(dir, 'flow')
     if not os.path.exists(flowdir): 
         os.mkdir(flowdir)
@@ -64,6 +66,7 @@ def cal_for_frames(dir):
     print("{} / processing optical flow....".format(dir))
     for i, frame_curr in enumerate(tqdm(frames)):
         name=os.path.splitext(frame_curr)[0]
+        name=name.replace(dir, flowdir)
         path=name+'_flow.jpg'
         if not os.path.exists(path):
             curr = cv2.imread(frame_curr)

@@ -19,7 +19,7 @@ class LoopPadding(object):
             if len(out) >= self.size:
                 break
             out.append(index)
-            out_crd['torso'].append(coords['torso'][i])
+            #out_crd['torso'].append(coords['torso'][i])
             out_crd['people'].append(coords['people'][i])
         return (out, out_crd)
                 
@@ -49,12 +49,12 @@ class MirrorLoopPadding(LoopPadding):
         
         for i in range(100):
             out += self.__getmirror__(frame_indices, i)
-            out_crd['torso'] += self.__getmirror__(coords['torso'], i)
+            #out_crd['torso'] += self.__getmirror__(coords['torso'], i)
             out_crd['people'] += self.__getmirror__(coords['people'], i)
             
             if len(out) >= self.size:
                 out = out[:self.size]
-                out_crd['torso'] = out_crd['torso'][:self.size]
+                #out_crd['torso'] = out_crd['torso'][:self.size]
                 out_crd['people'] = out_crd['people'][:self.size]
                 break
             
@@ -84,13 +84,13 @@ class TemporalBeginCrop(object):
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
         
-        out_crd['torso'][:self.size]
+        #out_crd['torso'][:self.size]
         out_crd['people'][:self.size]
         for i, index in enumerate(out):
             if len(out) >= self.size:
                 break
             out.append(index)
-            out_crd['torso'].append(coords['torso'][i])
+            #out_crd['torso'].append(coords['torso'][i])
             out_crd['people'].append(coords['people'][i])
 
         return (out, out_crd)
@@ -124,14 +124,14 @@ class TemporalCenterCrop(object):
         out = frame_indices[begin_index:end_index]
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
-        out_crd['torso'][begin_index:end_index]
+        #out_crd['torso'][begin_index:end_index]
         out_crd['people'][begin_index:end_index]
         
         for i, index in enumerate(out):
             if len(out) >= self.size:
                 break
             out.append(index)
-            out_crd['torso'].append(coords['torso'][i])
+            #out_crd['torso'].append(coords['torso'][i])
             out_crd['people'].append(coords['people'][i])
 
         return (out, out_crd)
@@ -165,14 +165,14 @@ class TemporalRandomCrop(object):
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
         
-        out_crd['torso'][begin_index:end_index]
+        #out_crd['torso'][begin_index:end_index]
         out_crd['people'][begin_index:end_index]
 
         for i, index in enumerate(out):
             if len(out) >= self.size:
                 break
             out.append(index)
-            out_crd['torso'].append(coords['torso'][i])
+            #out_crd['torso'].append(coords['torso'][i])
             out_crd['people'].append(coords['people'][i])
 
         return (out, out_crd)

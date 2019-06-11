@@ -9,43 +9,42 @@ def is_image_file(filename):
     return has_file_allowed_extension(filename, IMG_EXTENSIONS)
 
 
-def make_hh_dataset(dir, class_to_idx, df, data):
+def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
     """
         fnames: name of directory containing images
         coords: dict containg people, torso coordinates
         labels: class
     """
-    np.random.seed(50)
+    #np.random.seed(50)
     fnames, coords, labels = [], [], []
-    
-    exclusions = ['38_20190119_frames000643', 
-                  '40_20190208_frames026493',
-                  '34_20190110_frames066161',
-                  '34_20190110_frames111213']
     lists = df['imgpath'].values
     
     for label in os.listdir(os.path.join(dir)):
         for fname in os.listdir(os.path.join(dir, label)):
-            if is_image_file(fname):
-                continue
-            if fname not in lists:
-                continue
+            #if fname not in lists:
+            #    continue
             if fname in exclusions:
                 continue
 
             frames = sorted([os.path.join(dir, img) for img 
                              in os.listdir(os.path.join(dir, label, fname))])
             frames = [img for img in frames if is_image_file(img)]
+            isCropped = True if len(fname.split('_'))>3 else False
 
                 
-            item = [row for row in data if row['imgpath']==fname][0]
+            item = [row for row in data if row['imgpath'] in fname][0]
             people = item['people']
             npeople = np.array(people).shape[0]
             torso = item['torso']
             
-            tidxs = df[df['imgpath']==fname]['targets'].values[0] # target idx
-            if len(tidxs) == 0:
-                continue
+            if isCropped:
+                target = fname.replace('_'+fname.split('_')[-1], '')
+            else:
+                target = fname
+            tidxs = df[df['imgpath']==target]['targets'].values # target idx
+            if len(tidxs) == 0:  continue # remove data without label
+            else: tidxs = tidxs[0]
+                
             #class = df[df['imgpath']==fname]['class'].values[0] # label 
             tidxs = [int(t) for t in tidxs.strip().split(',')]
             nidxs = list(range(npeople))
@@ -54,13 +53,21 @@ def make_hh_dataset(dir, class_to_idx, df, data):
             
             ## appending clean
             for tidx in tidxs:
-                if len(frames) != len(people[tidx]):
+                if isCropped:
+                    start=int(fname.split('_')[-1])
+                else:
+                    start=0
+                end=start+len(frames)
+                
+                if len(frames) != len(people[tidx][start:end]) and not isCropped:
                     print("<{}> {} coords and {} frames / of people {}"
                               .format(fname, len(people[tidx]), len(frames), tidx))
                     print(people[tidx])
                     continue
+                    
                 fnames.append(os.path.join(dir, label, fname))
-                coords.append({'people':people[tidx], 'torso':torso[tidx]})
+                coords.append({'people':people[tidx][start:end], 
+                               'torso':torso[tidx][start:end]})
                 labels.append(label)
                 
             ## appending notclean 
