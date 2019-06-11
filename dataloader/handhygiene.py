@@ -19,6 +19,7 @@ from glob import glob
 def make_dataset(dir, class_to_idx, df, data):
     exclusions = ['38_20190119_frames000643', 
                   '40_20190208_frames026493',
+                  '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
     fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions)
@@ -98,6 +99,9 @@ class HandHygiene(I3DDataset):
             self.openpose_transform.randomize_parameters()
             streams = [self.openpose_transform(img, flow, coords, i)
                        for i, (img, flow) in enumerate(zip(clips, flows))]
+            if len(streams[0])==0:
+                print(self.__getpath__(index), "windonws empty")
+                print(coords)
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
         

@@ -91,7 +91,7 @@ class TemporalBeginCrop(object):
         return (out, out_crd)
     
     def __sizecheck__(self, out, out_crd):
-        if len(out) >= self.size:
+        if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorLoopPadding(self.size)])
@@ -134,7 +134,7 @@ class TemporalCenterCrop(object):
         return (out, out_crd)
     
     def __sizecheck__(self, out, out_crd):
-        if len(out) >= self.size:
+        if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorLoopPadding(self.size)])
@@ -177,7 +177,7 @@ class TemporalRandomCrop(object):
         return (out, out_crd)
     
     def __sizecheck__(self, out, out_crd):
-        if len(out) >= self.size:
+        if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorLoopPadding(self.size)])

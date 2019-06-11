@@ -104,6 +104,8 @@ class CropTorso(object):
         return (x, y, w, h)
     
     def calc_roi(self, windows):
+        if len(windows)==0:
+            print("empty windows")
         ws = np.array(windows).T[2]
         hs = np.array(windows).T[3]
         max_w, max_w_idx = np.max(ws), np.argmax(ws)
@@ -144,6 +146,8 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         """
         
         windows = self.get_windows(coords)
+        if len(windows)==0:
+            return windows
         rois = self.calc_roi(windows)
         
         #print(len(rois), "index:{}".format(index))

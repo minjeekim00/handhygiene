@@ -73,7 +73,7 @@ class AugmentDataset():
         dirname = self.samples[0][index]
         if len(dirname.split('_')) > 3:
             return
-        if '/notclean/' in dirname:
+        if '/clean/' in dirname:
             return
         list_frames = img_path_loader(dirname)
         nframes = len(list_frames)
@@ -91,7 +91,7 @@ class AugmentDataset():
         if nframes > clip_len:
             size = nframes-clip_len+1
             if int(size) > int(int(clip_len)/2):
-                choices = np.random.choice(size, int(size/(4)), replace=False)
+                choices = np.random.choice(size, int(size/(clip_len)), replace=False)
             else:
                 choices = np.random.choice(size, int(size/4), replace=False)
             print("dirname: {}, choicable size:{}/{},  choices: {}".format(os.path.basename(dirname), size, nframes, choices))
