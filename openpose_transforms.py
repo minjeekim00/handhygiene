@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from glob import glob
 from tqdm import tqdm
+from datetime import datetime
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -145,7 +146,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         windows = self.get_windows(coords)
         rois = self.calc_roi(windows)
         
-        print(len(rois), "index:{}".format(index))
+        #print(len(rois), "index:{}".format(index))
         roi = rois[index]
         x, y, w, h = roi
         
@@ -165,6 +166,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         
         
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales)-1)]
         self.tl_x = random.random()
         self.tl_y = random.random()        

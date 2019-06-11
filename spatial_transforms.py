@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import cv2
 
+from datetime import datetime
 from PIL import Image, ImageOps, ImageEnhance
 try:
     import accimage
@@ -35,6 +36,7 @@ class Compose(object):
         return img
 
     def randomize_parameters(self):
+        random.seed(datetime.now())
         for t in self.transforms:
             t.randomize_parameters()
 
@@ -248,6 +250,7 @@ class CornerCrop(object):
         return img
 
     def randomize_parameters(self):
+        random.seed(datetime.now())
         if self.randomize:
             self.crop_position = self.crop_positions[random.randint(
                 0,
@@ -268,6 +271,7 @@ class RandomHorizontalFlip(object):
         return img
 
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.p = random.random()
 
 
@@ -334,6 +338,7 @@ class MultiScaleCornerCrop(object):
         return img.resize((self.size, self.size), self.interpolation)
 
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
         self.crop_position = self.crop_positions[random.randint(
             0,
@@ -364,6 +369,7 @@ class MultiScaleRandomCrop(object):
         return img.resize((self.size, self.size), self.interpolation)
 
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
         self.tl_x = random.random()
         self.tl_y = random.random()
@@ -441,6 +447,7 @@ class ColorJitter(object):
         return transform(img)
     
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.seed = int(random.random()*1000)
     
     
@@ -471,6 +478,7 @@ class RandomRotation(object):
         return img.rotate(angle, self.resample, self.expand, self.center)
     
     def randomize_parameters(self):
+        random.seed(datetime.now())
         self.seed = int(random.random()*1000)
     
     
