@@ -103,28 +103,68 @@ def get_hand_pose_json(jsondir):
     coords['coord'].append(coord)
     return 
 
-
+def get_windows(coords):
+    people = coords['people']
+    torso = coords['torso']
+    windows = []
+    for i, p in enumerate(people):
+        try:
+            if p is not None:
+                window = calc_margin(torso, p)
+                windows.append(window)
+            else:
+                windows.append((0, 0, 0, 0))
+        except:
+            print("{} fail to calculate margin".format(i))
+            windows.append(None)
+        return windows
+    
 def calc_margin(torso, track_window):
+    m = 20 # margin
     torso = np.array(torso)
     x, y, w, h = track_window
-    
-    ## min이나 max가 4, 7일때 (idx:2, 5)일 때
+        
+    if len(torso) == 0:
+        return (x-m, y-m, w+(m*2), h+(m*2))
+        
+    x, y, w, h = x-m, y-m, w+(m*2), h+(m*2)
+        
+    ## min이나 max가 4, 7일때 (idx:2, 5)일 때 마진 더 주기
     min_x_idx = np.argmin(torso.T[0])
     max_x_idx = np.argmax(torso.T[0])
-    m = 20 # margin
-    x, y, w, h = x-m, y-m, w+(m*2), h+(m*2)
-    
     if min_x_idx == 2 or min_x_idx == 5:
         x = x-m
     if max_x_idx == 2 or max_x_idx == 5:
         w = w+m
-    
     #x = 0 if x<0 else x
     #y = 0 if y<0 else y
-    
     return (x, y, w, h)
 
 
+def calc_roi(windows):
+    if len(windows)==0:
+        print("empty windows")
+            
+    ws = np.array(windows).T[2]
+    hs = np.array(windows).T[3]
+    max_w, max_w_idx = np.max(ws), np.argmax(ws)
+    max_h, max_h_idx = np.max(hs), np.argmax(hs)
+        
+    rois = []
+    for i, track_window in enumerate(windows):
+        x, y, w, h = track_window
+
+        if w == 0 and h == 0:
+            # bring the first element having w, h
+            x, y, w, h = [t for t in windows if t[2] != 0 and t[3] != 0][0]
+
+        x_m = int((max_w-w)/2)
+        y_m = int((max_h-h)/2)
+        x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
+
+        rois.append((x,y,w,h))
+    return rois
+    
 def crop_by_clip(images, coords, idx=None, mode='rgb'):
     """
         rbgs: type: PIL.Image

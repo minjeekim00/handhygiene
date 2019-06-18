@@ -82,6 +82,7 @@ class CropTorso(object):
     
     
     def calc_margin(self, torso, track_window):
+        """ give extra margins to the bbox with min of max hand coord """
         m = 20 # margin
         torso = np.array(torso)
         x, y, w, h = track_window
@@ -89,12 +90,11 @@ class CropTorso(object):
         if len(torso) == 0:
             return (x-m, y-m, w+(m*2), h+(m*2))
         
-        ## min이나 max가 4, 7일때 (idx:2, 5)일 때
+        x, y, w, h = x-m, y-m, w+(m*2), h+(m*2)
+        
+        ## min이나 max가 4, 7일때 (idx:2, 5)일 때 마진 더 주기
         min_x_idx = np.argmin(torso.T[0])
         max_x_idx = np.argmax(torso.T[0])
-        
-        x, y, w, h = x-m, y-m, w+(m*2), h+(m*2)
-
         if min_x_idx == 2 or min_x_idx == 5:
             x = x-m
         if max_x_idx == 2 or max_x_idx == 5:
@@ -103,9 +103,11 @@ class CropTorso(object):
         #y = 0 if y<0 else y
         return (x, y, w, h)
     
+    
     def calc_roi(self, windows):
         if len(windows)==0:
             print("empty windows")
+            
         ws = np.array(windows).T[2]
         hs = np.array(windows).T[3]
         max_w, max_w_idx = np.max(ws), np.argmax(ws)
@@ -122,9 +124,33 @@ class CropTorso(object):
             x_m = int((max_w-w)/2)
             y_m = int((max_h-h)/2)
             x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-
             rois.append((x,y,w,h))
+            
+        ## applying simple moving average
+        #xs = np.array(self.moving_average(np.array(rois).T[0], 4))
+        #ys = np.array(self.moving_average(np.array(rois).T[1], 4))
+        #ws = np.array(self.moving_average(np.array(rois).T[2], 4))
+        #hs = np.array(self.moving_average(np.array(rois).T[3], 4))
+        
+        #buffer=[]
+        #for roi in zip(xs, ys, ws, hs):
+        #    buffer.append(roi)
         return rois
+    
+    
+    def moving_average(self, signal, period):
+        #buffer = [np.nan] * period
+        buffer = []
+        for i in range(len(signal)):
+            if i < period:
+                buffer.append(signal[i])
+            else:
+                buffer.append(int(np.round(signal[i-period:i].mean())))
+        return buffer
+    
+    
+    def align_boundingbox(self, rois):
+        return
     
     def randomize_parameters(self):
         pass

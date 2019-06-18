@@ -26,10 +26,12 @@ def make_dataset(dir, class_to_idx, df, data):
     targets = labels_to_idx(labels)
     return [fnames, coords, targets]
 
+
 def default_loader(fnames, coords):
     rgbs = video_loader(fnames, coords)
     flows = optflow_loader(fnames, coords)
     return rgbs, flows
+
 
 def video_loader(frames, coords):
     """
@@ -129,5 +131,3 @@ class HandHygiene(I3DDataset):
         
         return clips, flows, target
         #return clips, flows, target, coords
-    
-    
