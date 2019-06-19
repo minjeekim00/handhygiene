@@ -30,7 +30,7 @@ def optflow_loader(fnames):
     return video_loader(ffnames)
 
 
-def get_flownames(fnames):
+def get_flownames(fnames, reversed=False):
     ffnames=[]
     for img in fnames:
         dir = os.path.split(img)[0]
@@ -39,7 +39,9 @@ def get_flownames(fnames):
         if len(dir.split('_'))>3: # for augmentated dir
             start = int(dir.split('_')[-1])
             dir = dir.replace('_{}'.format(start), '')
-        flow = os.path.join(dir, 'flow', name+'_flow'+ext)
+            
+        flowdirname='flow' if not reversed else 'reverse_flow'
+        flow = os.path.join(dir, flowdirname, name+'_flow'+ext)
         ffnames.append(flow)
     return ffnames
 

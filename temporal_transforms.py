@@ -2,8 +2,6 @@ import random
 import math
 
 
-
-
 class LoopPadding(object):
     
     def __init__(self, size):

@@ -33,12 +33,12 @@ def default_loader(fnames, coords):
     return rgbs, flows
 
 
-def video_loader(frames, coords):
+def video_loader(fnames, coords):
     """
         return: list of PIL Images
     """
     video = []
-    for i, fname in enumerate(frames):
+    for i, fname in enumerate(fnames):
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
@@ -50,12 +50,17 @@ def optflow_loader(fnames, coords):
     """
         return: list of PIL Images
     """
-    ffnames = get_flownames(fnames)
+    isReversed=check_reverse(fnames)
+    ffnames = get_flownames(fnames, isReversed)
     if any(not os.path.exists(f) for f in ffnames):
         dir = os.path.split(fnames[0])[0]
         cal_for_frames(dir)
         
     return video_loader(ffnames, coords)
+
+
+def check_reverse(frames):
+    return True if frames != sorted(frames) else False
 
     
 class HandHygiene(I3DDataset):
