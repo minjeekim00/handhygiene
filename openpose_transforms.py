@@ -127,14 +127,14 @@ class CropTorso(object):
             rois.append((x,y,w,h))
             
         ## applying simple moving average
-        #xs = np.array(self.moving_average(np.array(rois).T[0], 4))
-        #ys = np.array(self.moving_average(np.array(rois).T[1], 4))
-        #ws = np.array(self.moving_average(np.array(rois).T[2], 4))
-        #hs = np.array(self.moving_average(np.array(rois).T[3], 4))
+        xs = np.array(self.moving_average(np.array(rois).T[0], 4))
+        ys = np.array(self.moving_average(np.array(rois).T[1], 4))
+        ws = np.array(self.moving_average(np.array(rois).T[2], 4))
+        hs = np.array(self.moving_average(np.array(rois).T[3], 4))
         
-        #buffer=[]
-        #for roi in zip(xs, ys, ws, hs):
-        #    buffer.append(roi)
+        buffer=[]
+        for roi in zip(xs, ys, ws, hs):
+            buffer.append(roi)
         return rois
     
     

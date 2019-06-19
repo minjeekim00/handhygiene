@@ -3,6 +3,7 @@ import torch.utils.data as data
 from .videodataset import *
 # https://github.com/minjeekim00/pytorch-dataset/blob/master/Video/videodataset.py
 from .opticalflow import compute_TVL1
+from .opticalflow import cal_reverse
 from .opticalflow import cal_for_frames
 #https://github.com/minjeekim00/pytorch-dataset/blob/master/Video/preprocessing/opticalflow.py
 
@@ -100,6 +101,7 @@ class I3DDataset(VideoFolder):
         paths = [self.__getpath__(i) for i in range(self.__len__()) 
                  if check_cropped_dir(self.__getpath__(i))]
         pool = Pool(num_workers)
+        pool.map(cal_for_frames, paths)
         pool.map(cal_for_frames, paths)
         return
     

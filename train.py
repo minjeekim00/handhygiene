@@ -10,17 +10,17 @@ from model.i3d import I3D_binary
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
-
 model_name = 'i3d'
 logpath = os.path.join('./logs/', model_name)
 if not os.path.exists(logpath): os.mkdir(logpath)
 writer = SummaryWriter(logpath)
 
-#rgb_weights_path = 'model/model_rgb.pth'
-#flow_weights_path = 'model/model_flow.pth'
-rgb_weights_path = 'weights/i3d/handhygiene_i3d_rgb_epoch_199.pth'
-flow_weights_path = 'weights/i3d/handhygiene_i3d_flow_epoch_199.pth'
+rgb_weights_path = 'model/model_rgb.pth'
+flow_weights_path = 'model/model_flow.pth'
+#rgb_weights_path = 'weights/i3d/handhygiene_i3d_rgb_epoch_199.pth'
+#flow_weights_path = 'weights/i3d/handhygiene_i3d_flow_epoch_199.pth'
 
+logger = open("transforms.txt", "w")
 
 def set_param_requires_grad(model, feature_extracting, training_num):
     if feature_extracting:
@@ -54,22 +54,21 @@ def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=Tru
     i3d_flow = I3D(num_classes=400, modality='flow', dropout_prob=0.5)
     #i3d_rgb = I3D(num_classes=400, modality='grey', dropout_prob=0.5)### for grey
     
+    if load_pt_weights:
+        statedict = change_key(torch.load(rgb_weights_path))
+        i3d_rgb.load_state_dict(statedict)
+    
     set_param_requires_grad(i3d_rgb, feature_extract, training_num)
     i3d_rgb.conv3d_0c_1x1 = modify_last_layer(i3d_rgb.conv3d_0c_1x1, out_channels=num_classes)
     i3d_rgb.softmax = torch.nn.Sigmoid()
     
     if load_pt_weights:
-        statedict = change_key(torch.load(rgb_weights_path))
-        i3d_rgb.load_state_dict(statedict)
+        statedict = change_key(torch.load(flow_weights_path))
+        i3d_flow.load_state_dict(statedict)
     
     set_param_requires_grad(i3d_flow, feature_extract, training_num)
     i3d_flow.conv3d_0c_1x1 = modify_last_layer(i3d_flow.conv3d_0c_1x1, out_channels=num_classes)
     i3d_flow.softmax = torch.nn.Sigmoid()
-    
-    if load_pt_weights:
-        statedict = change_key(torch.load(flow_weights_path))
-        i3d_flow.load_state_dict(statedict)
-    
     return i3d_rgb, i3d_flow
 
 
@@ -82,14 +81,14 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
     best_iters = {'rgb':0, 'flow':0, 'joint':0}
     iterations = {'train': 0, 'val': 0}
     
-    for epoch in tqdm(range(num_epochs)[200:num_epochs]):
-        
+    for epoch in tqdm(range(num_epochs)):
         for phase in ['train', 'val']:
             if phase == 'train':
                 scheduler['rgb'].step()
                 scheduler['flow'].step()
                 i3d_rgb.train()
                 i3d_flow.train()
+                logger.write("epoch {}/{}".format(epoch, num_epochs))
             else:
                 i3d_rgb.eval()
                 i3d_flow.eval()
@@ -220,4 +219,5 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                os.path.join('./weights/{}/{}_{}_bestiters_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', best_iters['flow'])))
     
     writer.close()
+    logger.close()
     return 

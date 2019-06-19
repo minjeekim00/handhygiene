@@ -1,6 +1,6 @@
 import random
 import math
-
+from train import logger
 
 class LoopPadding(object):
     
@@ -39,6 +39,10 @@ class MirrorPadding(LoopPadding):
         self.size = size
 
     def __call__(self, frame_indices, coords):
+        
+        ## for logging
+        logger.write("MirrorPadding")
+        
         out = frame_indices[::-1]
         out_crd = {'torso': coords['torso'][::-1],
                    'people': coords['people'][::-1]}
@@ -100,6 +104,9 @@ class TemporalBeginCrop(object):
 
     def __call__(self, frame_indices, coords):
         
+        ## for logging
+        logger.write("TemporalBeginCrop")
+        
         #print("begin cropping ...")
         out = frame_indices[:self.size]
         out_crd = {'torso': coords['torso'],
@@ -141,6 +148,8 @@ class TemporalCenterCrop(object):
         """
         
         #print("center cropping ...")
+        ## for logging
+        logger.write("TemporalCenterCrop")
         
         center_index = len(frame_indices) // 2
         begin_index = max(0, center_index - (self.size // 2))
@@ -166,7 +175,8 @@ class TemporalCenterCrop(object):
     
 
 class TemporalRandomCrop(object):
-    """Temporally crop the given frame indices at a random location.
+    """
+    Temporally crop the given frame indices at a random location.
     If the number of frames is less than the size,
     loop the indices as many times as necessary to satisfy the size.
     Args:
