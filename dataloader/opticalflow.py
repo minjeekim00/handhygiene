@@ -75,7 +75,41 @@ def cal_for_frames(dir):
             tmp = np.ones((shape[0], shape[1], 1)).astype(np.uint8)*128
             img = np.dstack((tmp_flow.astype(np.uint8), tmp))
             prev = curr
+            cv2.imwrite(path, img)
+        else:
+            continue
+        
+    return 
 
+def cal_reverse(dir):
+    if len(dir.split('_'))>3:
+        return
+    flowdir=os.path.join(dir, 'reverse_flow')
+    if not os.path.exists(flowdir): 
+        os.mkdir(flowdir)
+        
+    frames = glob(os.path.join(dir, '*.jpg'))
+    frames = sorted(frames, key=get_frame_num)[::-1]
+    fframes = glob(os.path.join(flowdir, '*_flow.jpg'))
+    if len(frames) == len(fframes):
+        return
+    
+    prev = cv2.imread(frames[0])
+    shape = prev.shape
+    prev = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
+    
+    print("{} / reverse optical flow....".format(dir))
+    for i, frame_curr in enumerate(tqdm(frames)):
+        name=os.path.splitext(frame_curr)[0]
+        name=name.replace(dir, flowdir)
+        path=name+'_flow.jpg'
+        if not os.path.exists(path):
+            curr = cv2.imread(frame_curr)
+            curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
+            tmp_flow = compute_TVL1(prev, curr)
+            tmp = np.ones((shape[0], shape[1], 1)).astype(np.uint8)*128
+            img = np.dstack((tmp_flow.astype(np.uint8), tmp))
+            prev = curr
             cv2.imwrite(path, img)
         else:
             continue

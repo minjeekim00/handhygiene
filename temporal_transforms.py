@@ -2,13 +2,14 @@ import random
 import math
 
 
+
+
 class LoopPadding(object):
     
     def __init__(self, size):
         self.size = size
 
     def __call__(self, frame_indices, coords):
-        #print("loop padding...")
         out = frame_indices
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
@@ -32,6 +33,28 @@ class LoopPadding(object):
             out, out_crd = transforms(out, out_crd)
         return out, out_crd
 
+
+class MirrorPadding(LoopPadding):
+    
+    def __init__(self, size):
+        super(MirrorPadding, self).__init__(size)
+        self.size = size
+
+    def __call__(self, frame_indices, coords):
+        out = frame_indices[::-1]
+        out_crd = {'torso': coords['torso'][::-1],
+                   'people': coords['people'][::-1]}
+        
+        out, our_crd = self.__sizecheck__(out, out_crd)
+        
+        for i, index in enumerate(out):
+            if len(out) >= self.size:
+                break
+            out.append(index)
+            #out_crd['torso'].append(coords['torso'][i])
+            out_crd['people'].append(coords['people'][i])
+        return (out, out_crd)
+    
     
 class MirrorLoopPadding(LoopPadding):
     
@@ -94,6 +117,7 @@ class TemporalBeginCrop(object):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
+                MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
             out, out_crd = transforms(out, out_crd)
         return out, out_crd
@@ -137,6 +161,7 @@ class TemporalCenterCrop(object):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
+                MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
             out, out_crd = transforms(out, out_crd)
         return out, out_crd
@@ -180,6 +205,7 @@ class TemporalRandomCrop(object):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
+                MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
             out, out_crd = transforms(out, out_crd)
         return out, out_crd
