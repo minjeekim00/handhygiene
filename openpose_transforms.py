@@ -159,10 +159,10 @@ class CropTorso(object):
     
 class MultiScaleTorsoRandomCrop(CropTorso):
     
-    def __init__(self, scales, size, interpolation=Image.BILINEAR):
+    def __init__(self, scales, size, interpolation=Image.BILINEAR, centercrop=False):
         super(MultiScaleTorsoRandomCrop, self).__init__(size, interpolation)
         self.scales = scales
-            
+        self.centercrop = centercrop    
             
     def __call__(self, img, flow, coords, index):
         """
@@ -199,6 +199,10 @@ class MultiScaleTorsoRandomCrop(CropTorso):
     def randomize_parameters(self):
         random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales)-1)]
-        self.tl_x = random.random()
-        self.tl_y = random.random()        
+        if not self.centercrop:
+            self.tl_x = random.random()
+            self.tl_y = random.random()
+        else:
+            self.tl_x = 0.5
+            self.tl_y = 0.5
     

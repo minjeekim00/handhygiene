@@ -15,6 +15,7 @@ from PIL import Image
 
 from tqdm import tqdm
 from glob import glob
+import logging
 
 
 def make_dataset(dir, class_to_idx, df, data):
@@ -100,6 +101,7 @@ class HandHygiene(I3DDataset):
         coords= self.samples[1][index]
         
         if self.temporal_transform is not None:
+            logging.info(index, self.temporal_transform)
             findices, coords = self.temporal_transform(findices, coords)
         clips, flows = self.loader(findices, coords)
         
