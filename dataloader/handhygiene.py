@@ -1,7 +1,7 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets.folder import find_classes
-from .i3ddataset import *
+from .i3ddataset import * #get_framepaths
 from .opticalflow import compute_TVL1
 from .opticalflow import cal_for_frames
 from .opticalflow import cal_reverse
@@ -100,10 +100,7 @@ class HandHygiene(I3DDataset):
         coords= self.samples[1][index]
         
         if self.temporal_transform is not None:
-            try:
-                findices, coords = self.temporal_transform(findices, coords)
-            except:
-                print(self.__getpath__(index))
+            findices, coords = self.temporal_transform(findices, coords)
         clips, flows = self.loader(findices, coords)
         
         if self.openpose_transform is not None:
@@ -115,14 +112,6 @@ class HandHygiene(I3DDataset):
                 print(coords)
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
-        
-        #### for 1 channel
-        #import sys
-        #sys.path.append("/data/private/minjee-video/handhygiene/")
-        #from spatial_transforms import ExtractSkinColor
-        #t = ExtractSkinColor()
-        #clips = [t(img) for img in clips]
-        ######################################
         
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()

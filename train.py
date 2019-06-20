@@ -82,12 +82,16 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
     iterations = {'train': 0, 'val': 0}
     
     for epoch in tqdm(range(num_epochs)):
+        if epoch > 300:
+            flowonly=True
+            
         for phase in ['train', 'val']:
             if phase == 'train':
                 scheduler['rgb'].step()
                 scheduler['flow'].step()
                 i3d_rgb.train()
                 i3d_flow.train()
+                print("epoch {}/{}".format(epoch, num_epochs))
                 logger.write("epoch {}/{}".format(epoch, num_epochs))
             else:
                 i3d_rgb.eval()
