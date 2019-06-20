@@ -12,7 +12,7 @@ class LoopPadding(object):
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
         
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         for i, index in enumerate(out):
             if len(out) >= self.size:
@@ -24,6 +24,7 @@ class LoopPadding(object):
                 
     def __sizecheck__(self, out, out_crd):
         if len(out) >= self.size:
+            print("size check: {}/{}".format(len(out), self.size))
             transforms = TemporalRandomChoice([
                 TemporalBeginCrop(self.size),
                 TemporalRandomCrop(self.size),
@@ -41,13 +42,14 @@ class MirrorPadding(LoopPadding):
     def __call__(self, frame_indices, coords):
         
         ## for logging
+        print("MirrorPadding")
         logger.write("MirrorPadding")
         
         out = frame_indices[::-1]
         out_crd = {'torso': coords['torso'][::-1],
                    'people': coords['people'][::-1]}
         
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         for i, index in enumerate(out):
             if len(out) >= self.size:
@@ -70,7 +72,7 @@ class MirrorLoopPadding(LoopPadding):
         out_crd = {'torso': coords['torso'],
                    'people': coords['people']}
         
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         for i in range(100):
             out += self.__getmirror__(frame_indices, i)
@@ -114,12 +116,13 @@ class TemporalBeginCrop(object):
         
         #out_crd['torso'] = out_crd['torso'][:self.size]
         out_crd['people'] = out_crd['people'][:self.size]
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         return (out, out_crd)
     
     def __sizecheck__(self, out, out_crd):
         if len(out) < self.size:
+            print("size check: {}/{}".format(len(out), self.size))
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorPadding(self.size),
@@ -160,12 +163,13 @@ class TemporalCenterCrop(object):
                    'people': coords['people']}
         #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
         out_crd['people'] = out_crd['people'][begin_index:end_index]
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         return (out, out_crd)
     
     def __sizecheck__(self, out, out_crd):
         if len(out) < self.size:
+            print("size check: {}/{}".format(len(out), self.size))
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorPadding(self.size),
@@ -205,7 +209,7 @@ class TemporalRandomCrop(object):
         
         #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
         out_crd['people'] = out_crd['people'][begin_index:end_index]
-        out, our_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         return (out, out_crd)
     

@@ -9,7 +9,7 @@ import torch
 import cv2
 
 from datetime import datetime
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance, PILLOW_VERSION
 try:
     import accimage
 except ImportError:
@@ -273,8 +273,9 @@ class RandomHorizontalFlip(object):
     def randomize_parameters(self):
         random.seed(datetime.now())
         self.p = random.random()
-
-
+        
+        
+        
 class MultiScaleCornerCrop(object):
     """Crop the given PIL.Image to randomly selected size.
     A crop of size is selected from scales of the original size.
@@ -480,7 +481,118 @@ class RandomRotation(object):
     def randomize_parameters(self):
         random.seed(datetime.now())
         self.seed = int(random.random()*1000)
+      
     
+    
+class RandomAffine(object):
+    """Random affine transformation of the image keeping center invariant"""
+    
+    def __init__(self, degrees, translate=None, scale=None, shear=None, resample=False, fillcolor=0):
+        if isinstance(degrees, numbers.Number):
+            if degrees < 0:
+                raise ValueError("If degrees is a single number, it must be positive.")
+            self.degrees = (-degrees, degrees)
+        else:
+            assert isinstance(degrees, (tuple, list)) and len(degrees) == 2, \
+                "degrees should be a list or tuple and it must be of length 2."
+            self.degrees = degrees
+
+        if translate is not None:
+            assert isinstance(translate, (tuple, list)) and len(translate) == 2, \
+                "translate should be a list or tuple and it must be of length 2."
+            for t in translate:
+                if not (0.0 <= t <= 1.0):
+                    raise ValueError("translation values should be between 0 and 1")
+        self.translate = translate
+
+        if scale is not None:
+            assert isinstance(scale, (tuple, list)) and len(scale) == 2, \
+                "scale should be a list or tuple and it must be of length 2."
+            for s in scale:
+                if s <= 0:
+                    raise ValueError("scale values should be positive")
+        self.scale = scale
+
+        if shear is not None:
+            if isinstance(shear, numbers.Number):
+                if shear < 0:
+                    raise ValueError("If shear is a single number, it must be positive.")
+                self.shear = (-shear, shear)
+            else:
+                assert isinstance(shear, (tuple, list)) and len(shear) == 2, \
+                    "shear should be a list or tuple and it must be of length 2."
+                self.shear = shear
+        else:
+            self.shear = shear
+
+        self.resample = resample
+        self.fillcolor = fillcolor
+
+    @staticmethod
+    def get_params(degrees, translate, scale_ranges, shears, img_size, seed):
+        """Get parameters for affine transformation
+
+        Returns:
+            sequence: params to be passed to the affine transformation
+        """
+        random.seed(seed)
+        angle = random.uniform(degrees[0], degrees[1])
+        if translate is not None:
+            max_dx = translate[0] * img_size[0]
+            max_dy = translate[1] * img_size[1]
+            translations = (np.round(random.uniform(-max_dx, max_dx)),
+                            np.round(random.uniform(-max_dy, max_dy)))
+        else:
+            translations = (0, 0)
+
+        if scale_ranges is not None:
+            scale = random.uniform(scale_ranges[0], scale_ranges[1])
+        else:
+            scale = 1.0
+
+        if shears is not None:
+            shear = random.uniform(shears[0], shears[1])
+        else:
+            shear = 0.0
+
+        return angle, translations, scale, shear
+
+    def __call__(self, img):
+        angle, translate, scale, shear = self.get_params(self.degrees, self.translate, self.scale, self.shear, img.size, self.seed)
+        output_size = img.size
+        center = (img.size[0] * 0.5 + 0.5, img.size[1] * 0.5 + 0.5)
+        matrix = self._get_inverse_affine_matrix(center, angle, translate, scale, shear)
+        kwargs = {"fillcolor": self.fillcolor} if PILLOW_VERSION[0] == '5' else {}
+        return img.transform(output_size, Image.AFFINE, matrix, self.resample, **kwargs)
+
+    def _get_inverse_affine_matrix(self, center, angle, translate, scale, shear):
+        # Helper method to compute inverse matrix for affine transformation
+        angle = math.radians(angle)
+        shear = math.radians(shear)
+        scale = 1.0 / scale
+
+        # Inverted rotation matrix with scale and shear
+        d = math.cos(angle + shear) * math.cos(angle) + math.sin(angle + shear) * math.sin(angle)
+        matrix = [
+            math.cos(angle + shear), math.sin(angle + shear), 0,
+            -math.sin(angle), math.cos(angle), 0
+        ]
+        matrix = [scale / d * m for m in matrix]
+
+        # Apply inverse of translation and of center translation: RSS^-1 * C^-1 * T^-1
+        matrix[2] += matrix[0] * (-center[0] - translate[0]) + matrix[1] * (-center[1] - translate[1])
+        matrix[5] += matrix[3] * (-center[0] - translate[0]) + matrix[4] * (-center[1] - translate[1])
+
+        # Apply center translation: C * RSS^-1 * C^-1 * T^-1
+        matrix[2] += center[0]
+        matrix[5] += center[1]
+        return matrix
+    
+    def randomize_parameters(self):
+        random.seed(datetime.now())
+        self.seed = int(random.random()*1000)
+        
+        
     
 class ExtractSkinColor(object):
     """

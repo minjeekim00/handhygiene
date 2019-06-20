@@ -163,7 +163,28 @@ def calc_roi(windows):
         x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
 
         rois.append((x,y,w,h))
-    return rois
+        
+    ## applying simple moving average
+    xs = np.array(moving_average(np.array(rois).T[0], 4))
+    ys = np.array(moving_average(np.array(rois).T[1], 4))
+    ws = np.array(moving_average(np.array(rois).T[2], 4))
+    hs = np.array(moving_average(np.array(rois).T[3], 4))
+        
+    buffer=[]
+    for roi in zip(xs, ys, ws, hs):
+        buffer.append(roi)
+    #return rois
+    return buffer
+
+def moving_average(signal, period):
+    #buffer = [np.nan] * period
+    buffer = []
+    for i in range(len(signal)):
+        if i < period:
+            buffer.append(signal[i])
+        else:
+            buffer.append(int(np.round(signal[i-period:i].mean())))
+    return buffer
     
 def crop_by_clip(images, coords, idx=None, mode='rgb'):
     """

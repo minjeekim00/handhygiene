@@ -135,7 +135,8 @@ class CropTorso(object):
         buffer=[]
         for roi in zip(xs, ys, ws, hs):
             buffer.append(roi)
-        return rois
+        #return rois
+        return buffer
     
     
     def moving_average(self, signal, period):

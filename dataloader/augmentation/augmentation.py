@@ -93,7 +93,7 @@ class AugmentDataset():
             if int(size) > int(int(clip_len)/2):
                 choices = np.random.choice(size, int(size/(clip_len)), replace=False)
             else:
-                choices = np.random.choice(size, int(size/4), replace=False)
+                choices = np.random.choice(size, int(size/2), replace=False)
             print("dirname: {}, choicable size:{}/{},  choices: {}".format(os.path.basename(dirname), size, nframes, choices))
             for ch in choices:
                 if ch == 0:

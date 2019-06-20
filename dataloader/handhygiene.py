@@ -100,7 +100,10 @@ class HandHygiene(I3DDataset):
         coords= self.samples[1][index]
         
         if self.temporal_transform is not None:
-            findices, coords = self.temporal_transform(findices, coords)
+            try:
+                findices, coords = self.temporal_transform(findices, coords)
+            except:
+                print(self.__getpath__(index))
         clips, flows = self.loader(findices, coords)
         
         if self.openpose_transform is not None:
@@ -108,7 +111,7 @@ class HandHygiene(I3DDataset):
             streams = [self.openpose_transform(img, flow, coords, i)
                        for i, (img, flow) in enumerate(zip(clips, flows))]
             if len(streams[0])==0:
-                print(self.__getpath__(index), "windonws empty")
+                print(self.__getpath__(index), "windows empty")
                 print(coords)
             clips = [stream[0] for stream in streams]
             flows = [stream[1] for stream in streams]
