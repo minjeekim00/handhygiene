@@ -102,7 +102,7 @@ class I3DDataset(VideoFolder):
                  if check_cropped_dir(self.__getpath__(i))]
         pool = Pool(num_workers)
         pool.map(cal_for_frames, paths)
-        pool.map(cal_for_frames, paths)
+        pool.map(cal_reverse, paths)
         return
     
     def __len__(self):

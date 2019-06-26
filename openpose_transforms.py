@@ -124,34 +124,43 @@ class CropTorso(object):
             x_m = int((max_w-w)/2)
             y_m = int((max_h-h)/2)
             x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-            rois.append((x,y,w,h))
-            
-        ## applying simple moving average
-        xs = np.array(self.moving_average(np.array(rois).T[0], 4))
-        ys = np.array(self.moving_average(np.array(rois).T[1], 4))
-        ws = np.array(self.moving_average(np.array(rois).T[2], 4))
-        hs = np.array(self.moving_average(np.array(rois).T[3], 4))
+            roi = [x,y,w,h]
+            #roi = self.align_boundingbox([x,y,w,h])
+            rois.append(roi)
         
-        buffer=[]
-        for roi in zip(xs, ys, ws, hs):
-            buffer.append(roi)
-        #return rois
-        return buffer
-    
-    
-    def moving_average(self, signal, period):
-        #buffer = [np.nan] * period
+        ## applying simple moving average
+        #for i in list(range(len(rois)+1))[len(rois)::-4][:-1]:
+        #    rois = self.moving_average(rois, i).T
+        for i in list(range(len(rois)+1))[::-4]:
+            rois[i:] = self.moving_average(rois[i:], 4).T
+            
         buffer = []
-        for i in range(len(signal)):
-            if i < period:
-                buffer.append(signal[i])
-            else:
-                buffer.append(int(np.round(signal[i-period:i].mean())))
+        for roi in rois:
+            buffer.append(list(roi))
+        return buffer
+    
+    def moving_average(self, rois, period):
+        #buffer = [np.nan] * period
+        if period == 0:
+            return np.array(rois).T
+        buffer = np.zeros((4, len(rois)), dtype=int)
+        for n, signal in enumerate(np.array(rois).T):
+            for i in range(len(signal)):
+                if i < period:
+                    buffer[n][i]=signal[i]
+                else:
+                    buffer[n][i]=int(np.round(signal[i-period:i].mean()))
         return buffer
     
     
-    def align_boundingbox(self, rois):
-        return
+    def align_boundingbox(self, roi):
+        x, y, w, h = roi
+        ratio = w/h
+        if ratio > 1:
+            y -= int((w-h)/2)
+        else:
+            x -= int((h-w)/2)
+        return [x, y, w, w]
     
     def randomize_parameters(self):
         pass

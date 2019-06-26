@@ -1,5 +1,6 @@
 import random
 import math
+import logging 
 
 class LoopPadding(object):
     
@@ -140,8 +141,6 @@ class TemporalCenterCrop(object):
             list: Cropped frame indices.
         """
         
-        logging.info("TemporalCenterCrop ")
-        
         center_index = len(frame_indices) // 2
         begin_index = max(0, center_index - (self.size // 2))
         end_index = min(begin_index + self.size, len(frame_indices))
@@ -268,6 +267,7 @@ class TemporalRandomChoice(RandomTransforms):
     """
     def __call__(self, frame_indices, coords):
         t = random.choice(self.transforms)
+        logging.info(str(t))
         return t(frame_indices, coords)
     
     

@@ -161,31 +161,38 @@ def calc_roi(windows):
         x_m = int((max_w-w)/2)
         y_m = int((max_h-h)/2)
         x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-
-        rois.append((x,y,w,h))
+        roi = align_boundingbox([x,y,w,h])
+        rois.append(roi)
         
     ## applying simple moving average
-    xs = np.array(moving_average(np.array(rois).T[0], 4))
-    ys = np.array(moving_average(np.array(rois).T[1], 4))
-    ws = np.array(moving_average(np.array(rois).T[2], 4))
-    hs = np.array(moving_average(np.array(rois).T[3], 4))
-        
-    buffer=[]
-    for roi in zip(xs, ys, ws, hs):
-        buffer.append(roi)
-    #return rois
+    for i in list(range(1, len(rois)))[::-1]:
+        rois = moving_average(rois, i).T
+            
+    buffer = []
+    for roi in rois:
+        buffer.append(list(roi))
     return buffer
 
-def moving_average(signal, period):
+def moving_average(rois, period):
     #buffer = [np.nan] * period
-    buffer = []
-    for i in range(len(signal)):
-        if i < period:
-            buffer.append(signal[i])
-        else:
-            buffer.append(int(np.round(signal[i-period:i].mean())))
+    buffer = np.zeros((4, len(rois)), dtype=int)
+    for n, signal in enumerate(np.array(rois).T):
+        for i in range(len(signal)):
+            if i < period:
+                buffer[n][i]=signal[i]
+            else:
+                buffer[n][i]=int(np.round(signal[i-period:i].mean()))
     return buffer
     
+def align_boundingbox(roi):
+    x, y, w, h = roi
+    ratio = w/h
+    if ratio > 1:
+        y -= int((w-h)/2)
+    else:
+        x -= int((h-w)/2)
+    return [x, y, w, w]
+
 def crop_by_clip(images, coords, idx=None, mode='rgb'):
     """
         rbgs: type: PIL.Image

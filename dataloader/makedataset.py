@@ -23,7 +23,7 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
         for fname in os.listdir(os.path.join(dir, label)):
             #if fname not in lists:
             #    continue
-            if fname in exclusions:
+            if any(exc in fname for exc in exclusions):
                 continue
 
             frames = sorted([os.path.join(dir, img) for img 
