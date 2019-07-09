@@ -24,7 +24,7 @@ def optflow_loader(fnames):
     ffnames = get_flownames(fnames)
     if any(not os.path.exists(f) for f in ffnames):
         dir = os.path.split(fnames[0])[0]
-        cm.calc_opticalflow(dir, True, True)
+        cm.findOpticalFlow(dir, True, True, False, False)
     return video_loader(ffnames)
 
 def get_flownames(fnames, reversed=False):
@@ -93,13 +93,18 @@ class I3DDataset(VideoFolder):
         return clips, flows, target
     
     def preprocess(self, num_workers):
-        from multiprocessing import Pool
-        paths = [self.__getpath__(i) for i in range(self.__len__()) 
-                 if check_cropped_dir(self.__getpath__(i))]
-        pool = Pool(num_workers)
-        pool.map(cal_for_frames, paths)
-        pool.map(cal_reverse, paths)
-        return
+        useCuda=True
+        if not useCuda:
+            from multiprocessing import Pool
+            paths = [self.__getpath__(i) for i in range(self.__len__()) 
+                     if check_cropped_dir(self.__getpath__(i))]
+            pool = Pool(num_workers)
+            pool.map(cal_for_frames, paths)
+            pool.map(cal_reverse, paths)
+            return
+        else:
+            for path in tqdm(paths):
+                cm.findOpticalFlow(path, useCuda, True, False, False)
     
     def __len__(self):
         return len(self.samples[0]) # fnames

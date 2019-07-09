@@ -18,8 +18,9 @@ try:
     import accimage
 except ImportError:
     accimage = None
-    
 
+### preprocessing flow
+### calc_margin -> get_windows -> calc_roi (with moving average)
 
 class CropTorso(object):
     
@@ -105,6 +106,7 @@ class CropTorso(object):
     
     
     def calc_roi(self, windows):
+        """ post processing on missing windows / temporal smoothing  """
         if len(windows)==0:
             print("empty windows")
             
@@ -125,7 +127,6 @@ class CropTorso(object):
             y_m = int((max_h-h)/2)
             x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
             roi = [x,y,w,h]
-            #roi = self.align_boundingbox([x,y,w,h])
             rois.append(roi)
         
         ## applying simple moving average
@@ -152,15 +153,6 @@ class CropTorso(object):
                     buffer[n][i]=int(np.round(signal[i-period:i].mean()))
         return buffer
     
-    
-    def align_boundingbox(self, roi):
-        x, y, w, h = roi
-        ratio = w/h
-        if ratio > 1:
-            y -= int((w-h)/2)
-        else:
-            x -= int((h-w)/2)
-        return [x, y, w, w]
     
     def randomize_parameters(self):
         pass
@@ -193,9 +185,13 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         if isinstance(self.size, int):
             crop_size_w = int(w * self.scale)
             crop_size_h = int(h * self.scale)
-
-            x -= self.tl_x * np.abs(w-crop_size_w)
-            y -= self.tl_y * np.abs(h-crop_size_h)
+            
+            if self.scale > 1:
+                x -= self.tl_x * np.abs(w-crop_size_w)
+                y -= self.tl_y * np.abs(h-crop_size_h)
+            else:
+                x += self.tl_x * np.abs(w-crop_size_w)
+                y += self.tl_y * np.abs(h-crop_size_h)
             x2 = x + crop_size_w
             y2 = y + crop_size_h
 
@@ -204,14 +200,62 @@ class MultiScaleTorsoRandomCrop(CropTorso):
             return (img.resize((self.size, self.size), self.interpolation),
                     flow.resize((self.size, self.size), self.interpolation))
         
+    def cal_extra_margin(self, window, scale=1.75):
+        """ 일단 1.75배 사이즈로 뻥튀기기 for augmentation """
+        x, y, w, h = window
+        max_length = max(w, h)
+        crop_size = int(max_length*scale)
+
+        x-= 0.5*(crop_size-w)
+        y-= 0.5*(crop_size-h)
+        x2 = x+crop_size
+        y2 = y+crop_size
+
+        return [x, y, crop_size, crop_size]
+    
+    def calc_roi(self, windows):
+        """ post processing on missing windows / temporal smoothing  """
+        if len(windows)==0:
+            print("empty windows")
+            
+        ws = np.array(windows).T[2]
+        hs = np.array(windows).T[3]
+        max_w, max_w_idx = np.max(ws), np.argmax(ws)
+        max_h, max_h_idx = np.max(hs), np.argmax(hs)
         
+        rois = []
+        for i, track_window in enumerate(windows):
+            x, y, w, h = track_window
+
+            if w == 0 and h == 0:
+                # bring the first element having w, h
+                x, y, w, h = [t for t in windows if t[2] != 0 and t[3] != 0][0]
+
+            x_m = int((max_w-w)/2)
+            y_m = int((max_h-h)/2)
+            x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
+            roi = self.cal_extra_margin([x, y, w, h])
+            #roi = [x,y,w,h]
+            rois.append(roi)
+        
+        ## applying simple moving average
+        for i in list(range(len(rois)+1))[::-4]:
+            rois[i:] = self.moving_average(rois[i:], 4).T
+            
+        buffer = []
+        for roi in rois:
+            buffer.append(list(roi))
+        return buffer
+    
     def randomize_parameters(self):
         random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales)-1)]
+        print(self.scale)
         if not self.centercrop:
             self.tl_x = random.random()
             self.tl_y = random.random()
         else:
             self.tl_x = 0.5
             self.tl_y = 0.5
-    
+            
+  

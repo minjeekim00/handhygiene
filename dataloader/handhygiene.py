@@ -32,7 +32,7 @@ def default_loader(fnames, coords):
     if any('38_20190119_frames000643' in fname for fname in fnames):
         print(fnames)
     rgbs = video_loader(fnames, coords)
-    flows = optflow_loader(fnames, coords)
+    flows = optflow_loader(fnames, coords, False)
     return rgbs, flows
 
 
@@ -73,16 +73,16 @@ def get_flownames(fnames, reversed=False, cropped=True):
     return ffnames
 
 
-def optflow_loader(fnames, coords):
+def optflow_loader(fnames, coords, cropped=True):
     """
         return: list of PIL Images
     """
     isReversed=check_reverse(fnames)
-    ffnames = get_flownames(fnames, isReversed)
+    ffnames = get_flownames(fnames, isReversed, cropped)
     if any(not os.path.exists(f) for f in ffnames):
         dir = os.path.split(fnames[0])[0]
         #cal_for_frames(dir)
-        cm.calc_opticalflow(dir, True, True, isReversed, True)
+        cm.findOpticalFlow(dir, True, True, isReversed, cropped)
         
     return video_loader(ffnames, coords)
 
@@ -171,4 +171,4 @@ class HandHygiene(I3DDataset):
             return
         else:
             for path in tqdm(paths):
-                cm.calc_opticalflow(path, useCuda, True, isReversed, True)
+                cm.findOpticalFlow(path, useCuda, True, False, True)
