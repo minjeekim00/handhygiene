@@ -1,13 +1,15 @@
 ### https://github.com/Rhythmblue/i3d_finetune/issues/2
 
 import os
+import sys
 import re
 import numpy as np
 import cv2 # to do flow preprocessing
 from glob import glob
 from tqdm import tqdm
 
-
+sys.path.append('./utils/python-opencv-cuda/python')
+import common as cm
 
 def get_frame_num(frame):
     filename = os.path.splitext(os.path.basename(frame))[0]

@@ -1,19 +1,16 @@
 import torch
 import torch.utils.data as data
-from .videodataset import *
+from .videodataset import * # TODO: explicit functions
 # https://github.com/minjeekim00/pytorch-dataset/blob/master/Video/videodataset.py
-from .opticalflow import compute_TVL1
-from .opticalflow import cal_reverse
-from .opticalflow import cal_for_frames
-#https://github.com/minjeekim00/pytorch-dataset/blob/master/Video/preprocessing/opticalflow.py
+import sys
+sys.path.append('./utils/python-opencv-cuda/python')
+import common as cm
 
 import os
 import numpy as np
 from PIL import Image
-
 from tqdm import tqdm
 from glob import glob
-
 import json
 import pandas as pd
 
@@ -27,9 +24,8 @@ def optflow_loader(fnames):
     ffnames = get_flownames(fnames)
     if any(not os.path.exists(f) for f in ffnames):
         dir = os.path.split(fnames[0])[0]
-        cal_for_frames(dir)
+        cm.calc_opticalflow(dir, True, True)
     return video_loader(ffnames)
-
 
 def get_flownames(fnames, reversed=False):
     ffnames=[]
