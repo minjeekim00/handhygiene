@@ -96,6 +96,8 @@ class I3DDataset(VideoFolder):
         useCuda=True
         if not useCuda:
             from multiprocessing import Pool
+            from .opticalflow import cal_for_frames
+            from .opticalflow import cal_reverse
             paths = [self.__getpath__(i) for i in range(self.__len__()) 
                      if check_cropped_dir(self.__getpath__(i))]
             pool = Pool(num_workers)

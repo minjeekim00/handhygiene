@@ -28,15 +28,15 @@ def make_dataset(dir, class_to_idx, df, data):
     return [fnames, coords, targets]
 
 
-def default_loader(fnames, coords):
+def default_loader(fnames, coords, cropped):
     if any('38_20190119_frames000643' in fname for fname in fnames):
         print(fnames)
     rgbs = video_loader(fnames, coords)
-    flows = optflow_loader(fnames, coords, False)
+    flows = optflow_loader(fnames, coords, cropped)
     return rgbs, flows
 
 
-def video_loader(fnames, coords):
+def video_loader(fnames, coords, cropped):
     """
         return: list of PIL Images
     """
@@ -49,31 +49,7 @@ def video_loader(fnames, coords):
     return video
 
 
-def get_flowdir(dir, reversed=False, cropped=True):
-    if cropped:
-        name='cropped_flow' if not reversed else 'cropped_reverse_flow'
-    else:
-        name='flow' if not reversed else 'reverse_flow'
-    flowdir=os.path.join(dir, name)
-    return flowdir
-
-
-def get_flownames(fnames, reversed=False, cropped=True):
-    ffnames=[]
-    for img in fnames:
-        dir = os.path.split(img)[0]
-        tail = os.path.split(img)[1]
-        name, ext = os.path.splitext(tail)
-        if len(dir.split('_'))>3: # for augmentated dir
-            start = int(dir.split('_')[-1])
-            dir = dir.replace('_{}'.format(start), '')
-        flowdir = get_flowdir(dir, reversed, cropped)
-        flow = os.path.join(flowdir, name+'_flow'+ext)
-        ffnames.append(flow)
-    return ffnames
-
-
-def optflow_loader(fnames, coords, cropped=True):
+def optflow_loader(fnames, coords, cropped):
     """
         return: list of PIL Images
     """
@@ -87,6 +63,23 @@ def optflow_loader(fnames, coords, cropped=True):
     return video_loader(ffnames, coords)
 
 
+def get_flownames(fnames, reversed, cropped):
+    ffnames=[]
+    for img in fnames:
+        dir = os.path.split(img)[0]
+        tail = os.path.split(img)[1]
+        name, ext = os.path.splitext(tail)
+        if len(dir.split('_'))>3: # for augmentated dir
+            start = int(dir.split('_')[-1])
+            dir = dir.replace('_{}'.format(start), '')
+            
+        name='flow' if not reversed else 'reverse_flow'
+        flowdir=os.path.join(dir, name)
+        flow = os.path.join(flowdir, name+'_flow'+ext)
+        ffnames.append(flow)
+    return ffnames
+
+
 def check_reverse(frames):
     return True if frames != sorted(frames) else False
 
@@ -98,7 +91,7 @@ class HandHygiene(I3DDataset):
                  temporal_transform=None,
                  openpose_transform=None,
                  target_transform=None,
-                 preprocess=False, loader=default_loader, num_workers=1):
+                 preprocess=False, loader=default_loader, cropped=True, num_workers=1):
 
         super(HandHygiene, self).__init__(root, split, clip_len,
                                          spatial_transform=spatial_transform,
@@ -107,6 +100,8 @@ class HandHygiene(I3DDataset):
                                          preprocess=preprocess, loader=loader,
                                          num_workers=num_workers)
         
+        if cropped:
+            self.image_dir = os.path.join(root, 'cropped')
         df = target_dataframe()
         keypoints = get_keypoints()
         folder = os.path.join(self.image_dir, split)
@@ -115,6 +110,7 @@ class HandHygiene(I3DDataset):
         self.loader = loader
         self.samples = make_dataset(folder, class_to_idx, df, keypoints)
         self.openpose_transform = openpose_transform
+        self.cropped = cropped
         ## check optical flow
         if preprocess:
             self.preprocess(num_workers)
@@ -122,6 +118,8 @@ class HandHygiene(I3DDataset):
             
     def __getitem__(self, index):
         # loading and preprocessing.
+        
+        cropped = self.cropped
         fnames= self.samples[0][index]
         findices = get_framepaths(fnames)
         coords= self.samples[1][index]
@@ -129,7 +127,7 @@ class HandHygiene(I3DDataset):
         logging.info("sample: {}".format(index))
         if self.temporal_transform is not None:
             findices, coords = self.temporal_transform(findices, coords)
-        clips, flows = self.loader(findices, coords)
+        clips, flows = self.loader(findices, coords, cropped)
         
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
@@ -161,8 +159,11 @@ class HandHygiene(I3DDataset):
         
     def preprocess(self, num_workers):
         useCuda=True
+        cropped=self.cropped
         if not useCuda:
             from multiprocessing import Pool
+            from .opticalflow import cal_for_frames
+            from .opticalflow import cal_reverse
             paths = [self.__getpath__(i) for i in range(self.__len__()) 
                      if check_cropped_dir(self.__getpath__(i))]
             pool = Pool(num_workers)
@@ -171,4 +172,4 @@ class HandHygiene(I3DDataset):
             return
         else:
             for path in tqdm(paths):
-                cm.findOpticalFlow(path, useCuda, True, False, True)
+                cm.findOpticalFlow(path, useCuda, True, False, cropped)

@@ -234,8 +234,11 @@ class MultiScaleTorsoRandomCrop(CropTorso):
             x_m = int((max_w-w)/2)
             y_m = int((max_h-h)/2)
             x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-            roi = self.cal_extra_margin([x, y, w, h])
-            #roi = [x,y,w,h]
+            
+            if self.scale > 1:
+                roi = [x,y,w,h]
+            else:
+                roi = self.cal_extra_margin([x, y, w, h])
             rois.append(roi)
         
         ## applying simple moving average
