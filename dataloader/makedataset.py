@@ -9,7 +9,7 @@ def is_image_file(filename):
     return has_file_allowed_extension(filename, IMG_EXTENSIONS)
 
 
-def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
+def make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped):
     """
         fnames: name of directory containing images
         coords: dict containg people, torso coordinates
@@ -30,7 +30,6 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
                              in os.listdir(os.path.join(dir, label, fname))])
             frames = [img for img in frames if is_image_file(img)]
             isCropped = True if len(fname.split('_'))>3 else False
-
                 
             item = [row for row in data if row['imgpath'] in fname][0]
             people = item['people']
@@ -66,8 +65,13 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
                     continue
                     
                 fnames.append(os.path.join(dir, label, fname))
-                coords.append({'people':people[tidx][start:end], 
-                               'torso':torso[tidx][start:end]})
+                if not cropped:
+                    coords.append({'people':people[tidx][start:end], 
+                                   'torso':torso[tidx][start:end]})
+                else: ## TODO: change 224 to image shape
+                    coords.append({'people': [[0, 0, 224, 224] for i in range(start, end)],
+                                   'torso':torso[tidx][start:end]})
+               
                 labels.append(label)
                 
             ## appending notclean 
@@ -85,6 +89,7 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions):
             #        labels.append('notclean')
     
     print('Number of {} people: {:d}'.format(dir, len(fnames)))
+    
     return fnames, coords, labels
 
 def target_dataframe(path='./data/label.csv'):

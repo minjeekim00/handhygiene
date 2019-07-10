@@ -173,10 +173,13 @@ class MultiScaleTorsoRandomCrop(CropTorso):
             PIL.Image: Rescaled image.
         """
         
-        windows = self.get_windows(coords)
-        if len(windows)==0:
-            return windows
-        rois = self.calc_roi(windows)
+        if self.scale > 1:
+            windows = self.get_windows(coords)
+            if len(windows)==0:
+                return windows
+            rois = self.calc_roi(windows)
+        else:
+            rois = [win for win in coords['people']]
         
         #print(len(rois), "index:{}".format(index))
         roi = rois[index]
@@ -253,7 +256,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
     def randomize_parameters(self):
         random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales)-1)]
-        print(self.scale)
+        #print(self.scale)
         if not self.centercrop:
             self.tl_x = random.random()
             self.tl_y = random.random()

@@ -17,13 +17,13 @@ import sys
 sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 
-def make_dataset(dir, class_to_idx, df, data):
+def make_dataset(dir, class_to_idx, df, data, cropped):
     exclusions = ['38_20190119_frames000643', 
                   '40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions)
+    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped)
     targets = labels_to_idx(labels)
     return [fnames, coords, targets]
 
@@ -36,7 +36,7 @@ def default_loader(fnames, coords, cropped):
     return rgbs, flows
 
 
-def video_loader(fnames, coords, cropped):
+def video_loader(fnames, coords):
     """
         return: list of PIL Images
     """
@@ -73,8 +73,8 @@ def get_flownames(fnames, reversed, cropped):
             start = int(dir.split('_')[-1])
             dir = dir.replace('_{}'.format(start), '')
             
-        name='flow' if not reversed else 'reverse_flow'
-        flowdir=os.path.join(dir, name)
+        flowdirname='flow' if not reversed else 'reverse_flow'
+        flowdir=os.path.join(dir, flowdirname)
         flow = os.path.join(flowdir, name+'_flow'+ext)
         ffnames.append(flow)
     return ffnames
@@ -91,7 +91,7 @@ class HandHygiene(I3DDataset):
                  temporal_transform=None,
                  openpose_transform=None,
                  target_transform=None,
-                 preprocess=False, loader=default_loader, cropped=True, num_workers=1):
+                 preprocess=False, loader=default_loader, num_workers=1, cropped=True):
 
         super(HandHygiene, self).__init__(root, split, clip_len,
                                          spatial_transform=spatial_transform,
@@ -108,7 +108,7 @@ class HandHygiene(I3DDataset):
         classes, class_to_idx = find_classes(folder)
         
         self.loader = loader
-        self.samples = make_dataset(folder, class_to_idx, df, keypoints)
+        self.samples = make_dataset(folder, class_to_idx, df, keypoints, cropped)
         self.openpose_transform = openpose_transform
         self.cropped = cropped
         ## check optical flow
@@ -126,6 +126,7 @@ class HandHygiene(I3DDataset):
         
         logging.info("sample: {}".format(index))
         if self.temporal_transform is not None:
+            ## TODO: applying reversed flow
             findices, coords = self.temporal_transform(findices, coords)
         clips, flows = self.loader(findices, coords, cropped)
         
@@ -159,13 +160,14 @@ class HandHygiene(I3DDataset):
         
     def preprocess(self, num_workers):
         useCuda=True
-        cropped=self.cropped
+        cropped=True
+        paths = [self.__getpath__(i) for i in range(self.__len__()) 
+                     if check_cropped_dir(self.__getpath__(i))]
         if not useCuda:
             from multiprocessing import Pool
             from .opticalflow import cal_for_frames
             from .opticalflow import cal_reverse
-            paths = [self.__getpath__(i) for i in range(self.__len__()) 
-                     if check_cropped_dir(self.__getpath__(i))]
+            
             pool = Pool(num_workers)
             pool.map(cal_for_frames, paths)
             pool.map(cal_reverse, paths)
