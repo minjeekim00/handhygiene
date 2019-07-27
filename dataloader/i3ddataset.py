@@ -1,7 +1,7 @@
 import torch
 import torch.utils.data as data
 from .videodataset import * # TODO: explicit functions
-# https://github.com/minjeekim00/pytorch-dataset/blob/master/Video/videodataset.py
+# get_framepaths, video_loader
 import sys
 sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
@@ -33,10 +33,9 @@ def get_flownames(fnames, reversed=False):
         dir = os.path.split(img)[0]
         tail = os.path.split(img)[1]
         name, ext = os.path.splitext(tail)
-        if len(dir.split('_'))>3: # for augmentated dir
-            start = int(dir.split('_')[-1])
-            dir = dir.replace('_{}'.format(start), '')
-            
+        if check_cropped_dir(dir): # remove last _
+            dir = '_'.join(dir.split('_')[:-1])
+        
         flowdirname='flow' if not reversed else 'reverse_flow'
         flow = os.path.join(dir, flowdirname, name+'_flow'+ext)
         ffnames.append(flow)
@@ -45,7 +44,7 @@ def get_flownames(fnames, reversed=False):
 def check_cropped_dir(dir):
     """ to check if the images in dir are temporally cropped from original data"""
     basename = os.path.basename(dir)
-    return False if len(basename.split('_'))>3 else True
+    return True if len(basename.split('_'))>3 else False
 
 class I3DDataset(VideoFolder):
         

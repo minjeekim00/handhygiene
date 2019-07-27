@@ -18,8 +18,7 @@ sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 
 def make_dataset(dir, class_to_idx, df, data, cropped):
-    exclusions = ['38_20190119_frames000643', 
-                  '40_20190208_frames026493',
+    exclusions = ['40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
@@ -29,8 +28,6 @@ def make_dataset(dir, class_to_idx, df, data, cropped):
 
 
 def default_loader(fnames, coords, cropped):
-    if any('38_20190119_frames000643' in fname for fname in fnames):
-        print(fnames)
     rgbs = video_loader(fnames, coords)
     flows = optflow_loader(fnames, coords, cropped)
     return rgbs, flows
