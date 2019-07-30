@@ -1,6 +1,5 @@
 import torch
 import torch.utils.data as data
-from torchvision.datasets.folder import find_classes
 from .i3ddataset import * # get_framepaths, get_flownames
 from .makedataset import make_hh_dataset
 from .makedataset import target_dataframe
@@ -67,8 +66,7 @@ def get_flownames(fnames, reversed, cropped):
         tail = os.path.split(img)[1]
         name, ext = os.path.splitext(tail)
         if len(dir.split('_'))>3: # for augmentated dir
-            start = int(dir.split('_')[-1])
-            dir = dir.replace('_{}'.format(start), '')
+            dir = '_'.join(dir.split('_')[:-1])
             
         flowdirname='flow' if not reversed else 'reverse_flow'
         flowdir=os.path.join(dir, flowdirname)
@@ -102,7 +100,7 @@ class HandHygiene(I3DDataset):
         df = target_dataframe()
         keypoints = get_keypoints()
         folder = os.path.join(self.image_dir, split)
-        classes, class_to_idx = find_classes(folder)
+        classes, class_to_idx = self._find_classes(folder)
         
         self.loader = loader
         self.samples = make_dataset(folder, class_to_idx, df, keypoints, cropped)

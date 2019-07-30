@@ -61,7 +61,7 @@ class AugmentDataset():
     
     def __init__(self, root, split='train', clip_len=16):
         self.root =root
-        self.image_dir = os.path.join(root, 'cropped') ####
+        self.image_dir = os.path.join(root, 'images') ####
         
         folder = os.path.join(self.image_dir, split)
         classes, class_to_idx = find_classes(folder)
@@ -90,15 +90,15 @@ class AugmentDataset():
         np.random.seed(int(time.time()))
         if nframes > clip_len:
             size = nframes-clip_len+1
-            if int(size) > int(int(clip_len)/2):
-                choices = np.random.choice(size, int(size/(clip_len)), replace=False)
+            if int(size) > int(int(clip_len)/16):
+                choices = np.random.choice(size, int(size/16), replace=False) #int(size/(clip_len))
             else:
-                choices = np.random.choice(size, int(size/3), replace=False)
+                choices = np.random.choice(size, int(size/16), replace=False)
             print("dirname: {}, choicable size:{}/{},  choices: {}".format(os.path.basename(dirname), size, nframes, choices))
             for ch in choices:
                 if ch == 0:
                     continue
-                path_dst = dirname+'_{}'.format(ch-1)
+                path_dst = dirname+'_{}'.format(ch)
                 if os.path.exists(path_dst): 
                     continue
                 
