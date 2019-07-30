@@ -176,6 +176,7 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         if self.scale > 1:
             windows = self.get_windows(coords)
             if len(windows)==0:
+                print(self, "empty windows", windows)
                 return windows
             rois = self.calc_roi(windows)
         else:
@@ -183,6 +184,9 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         
         #print(len(rois), "index:{}".format(index))
         roi = rois[index]
+        if roi==None:
+            roi=[roi for roi in rois if roi != None][0]
+            if roi==None: print(self, roi, "None type roi")
         x, y, w, h = roi
         
         if isinstance(self.size, int):
