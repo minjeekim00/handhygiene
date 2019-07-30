@@ -87,7 +87,6 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped):
                 print(fname)
     
     print('Number of {} people: {:d}'.format(dir, len(fnames)))
-    
     return fnames, coords, labels
 
 def target_dataframe(path='./data/label.csv'):
