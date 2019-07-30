@@ -1,6 +1,7 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets import DatasetFolder
+from torchvision.datasets.folder import find_classes
 from torchvision.datasets.folder import IMG_EXTENSIONS
 from torchvision.datasets.folder import has_file_allowed_extension
 
@@ -77,7 +78,7 @@ class VideoFolder(DatasetFolder):
         self.image_dir = os.path.join(root, 'images')
         folder = os.path.join(self.image_dir, split)
         
-        classes, class_to_idx = self._find_classes(folder)
+        classes, class_to_idx = find_classes(folder)
         self.classes = classes
         self.class_to_idx = class_to_idx
         self.samples = make_dataset(folder, class_to_idx)
@@ -86,16 +87,6 @@ class VideoFolder(DatasetFolder):
         self.target_transform = target_transform
         self.clip_len = clip_len
         
-    def _find_classes(self, dir):
-        if sys.version_info >= (3, 5):
-            # Faster and available in Python 3.5 and above
-            classes = [d.name for d in os.scandir(dir) if d.is_dir()]
-        else:
-            classes = [d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))]
-        classes.sort()
-        class_to_idx = {classes[i]: i for i in range(len(classes))}
-        return classes, class_to_idx
-    
     def __getitem__(self, index):
         fnames = self.samples[0][index]
         findices = get_framepaths(fnames)
