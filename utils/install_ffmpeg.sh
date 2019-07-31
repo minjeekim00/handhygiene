@@ -18,7 +18,7 @@ cd ffmpeg-${version}
 # ubuntu 18.04
 #./configure --prefix=/usr/local/ffmpeg --enable-gpl --enable-version3 --enable-nonfree --enable-postproc --enable-pthreads --enable-libfdk_aac --enable-libmp3lame --enable-libtheora --enable-libx264 --enable-libxvid --enable-libxcb --enable-libvorbis
 # ubuntu < 18.04
-./configure --disable-static --enable-shared --disable-doc
+./configure --prefix=/usr/local/ffmpeg --disable-static --enable-shared --disable-doc
 
 sudo make
 sudo make install
@@ -27,6 +27,7 @@ sudo make install
 echo "# Add FFMpeg bin & library paths:" >> ~/.bashrc
 echo "export PATH=/usr/local/ffmpeg/bin:$PATH" >> ~/.bashrc
 echo "export LD_LIBRARY_PATH=/usr/local/ffmpeg/lib:$LD_LIBRARY_PATH" >> ~/.bashrc
+echo "export PKG_CONFIG_PATH=/usr/local/ffmpeg/lib/pkgconfig" >> ~/.bashrc
 source ~/.bashrc
 
 ## You can also install from a PPA
