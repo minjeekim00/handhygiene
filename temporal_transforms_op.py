@@ -7,27 +7,35 @@ class LoopPadding(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         out = frame_indices
-        out = self.__sizecheck__(out)
-        out = self.loop(out)
-        return out
+        out_crd = {'torso': coords['torso'],
+                   'people': coords['people']}
+        
+        out, out_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.loop(out, out_crd)
+        return (out, out_crd)
     
-    def loop(self, out):
-        for index in out:
+    def loop(self, out, out_crd):
+        n=10
+        people=out_crd['people'] #temp
+        for i, (index, p_crd) in enumerate((zip(out*n, people*n))):
             if len(out) >= 16:
                 break
             out.append(index)
-        return out
+            people.append(p_crd)
+            
+        out_crd['people']=people #update
+        return out, out_crd
     
-    def __sizecheck__(self, out):
+    def __sizecheck__(self, out, out_crd):
         if len(out) >= self.size:
             transforms = TemporalRandomChoice([
                 TemporalBeginCrop(self.size),
                 TemporalRandomCrop(self.size),
                 TemporalCenterCrop(self.size)])
-            out = transforms(out)
-        return out
+            out, out_crd = transforms(out, out_crd)
+        return out, out_crd
 
 
 class MirrorPadding(LoopPadding):
@@ -36,11 +44,15 @@ class MirrorPadding(LoopPadding):
         super(MirrorPadding, self).__init__(size)
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
+        
         out = frame_indices[::-1]
-        out = self.__sizecheck__(out)
-        out = self.loop(out)
-        return out
+        out_crd = {'torso': coords['torso'][::-1],
+                   'people': coords['people'][::-1]}
+        
+        out, out_crd = self.__sizecheck__(out, out_crd)
+        out, out_crd = self.loop(out, out_crd)
+        return (out, out_crd)
     
     
 class MirrorLoopPadding(LoopPadding):
@@ -49,18 +61,27 @@ class MirrorLoopPadding(LoopPadding):
         super(MirrorLoopPadding, self).__init__(size)
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         #print("mirror loop padding...")
         out = frame_indices
-        out = self.__sizecheck__(out)
+        out_crd = {'torso': coords['torso'],
+                   'people': coords['people']}
+        
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
         for i in range(100):
             out += self.__getmirror__(frame_indices, i)
+            #out_crd['torso'] += self.__getmirror__(coords['torso'], i)
+            out_crd['people'] += self.__getmirror__(coords['people'], i)
             
             if len(out) >= self.size:
                 out = out[:self.size]
+                #out_crd['torso'] = out_crd['torso'][:self.size]
+                out_crd['people'] = out_crd['people'][:self.size]
                 break
-        return out
+            
+        return (out, out_crd)
+    
     
     def __getmirror__(self, li, i):
         return list(reversed(li))[1:] if i == 0 or i/2 == 1 else li
@@ -78,20 +99,27 @@ class TemporalBeginCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
+        
         #print("begin cropping ...")
         out = frame_indices[:self.size]
-        out = self.__sizecheck__(out)
-        return out
+        out_crd = {'torso': coords['torso'],
+                   'people': coords['people']}
+        
+        #out_crd['torso'] = out_crd['torso'][:self.size]
+        out_crd['people'] = out_crd['people'][:self.size]
+        out, out_crd = self.__sizecheck__(out, out_crd)
+        
+        return (out, out_crd)
     
-    def __sizecheck__(self, out):
+    def __sizecheck__(self, out, out_crd):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
-            out = transforms(out)
-        return out
+            out, out_crd = transforms(out, out_crd)
+        return out, out_crd
 
 
 class TemporalCenterCrop(object):
@@ -105,7 +133,7 @@ class TemporalCenterCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         """
         Args:
             frame_indices (list): frame indices to be cropped.
@@ -118,18 +146,22 @@ class TemporalCenterCrop(object):
         end_index = min(begin_index + self.size, len(frame_indices))
 
         out = frame_indices[begin_index:end_index]
-        out = self.__sizecheck__(out)
+        out_crd = {'torso': coords['torso'],
+                   'people': coords['people']}
+        #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
+        out_crd['people'] = out_crd['people'][begin_index:end_index]
+        out, out_crd = self.__sizecheck__(out, out_crd)
         
-        return out
+        return (out, out_crd)
     
-    def __sizecheck__(self, out):
+    def __sizecheck__(self, out, out_crd):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
-            out = transforms(out)
-        return out
+            out, out_crd = transforms(out, out_crd)
+        return out, out_crd
     
 
 class TemporalRandomCrop(object):
@@ -144,7 +176,7 @@ class TemporalRandomCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         """
         Args:
             frame_indices (list): frame indices to be cropped.
@@ -158,18 +190,23 @@ class TemporalRandomCrop(object):
         end_index = min(begin_index + self.size, len(frame_indices))
 
         out = frame_indices[begin_index:end_index]
-        out = self.__sizecheck__(out)
+        out_crd = {'torso': coords['torso'],
+                   'people': coords['people']}
         
-        return out
+        #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
+        out_crd['people'] = out_crd['people'][begin_index:end_index]
+        out, out_crd = self.__sizecheck__(out, out_crd)
+        
+        return (out, out_crd)
     
-    def __sizecheck__(self, out):
+    def __sizecheck__(self, out, out_crd):
         if len(out) < self.size:
             transforms = TemporalRandomChoice([
                 LoopPadding(self.size),
                 MirrorPadding(self.size),
                 MirrorLoopPadding(self.size)])
-            out = transforms(out)
-        return out
+            out, out_crd = transforms(out, out_crd)
+        return out, out_crd
 
     
 class RandomTransforms(object):
@@ -207,13 +244,13 @@ class TemporalRandomApply(RandomTransforms):
         super(TemporalRandomApply, self).__init__(transforms)
         self.p = p
 
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         if self.p < random.random():
-            return frame_indices
+            return frame_indices, coords
         
         for t in self.transforms:
-            frame_indices = t(frame_indices)
-        return frame_indice
+            frame_indices, coords = t(frame_indices, coords)
+        return frame_indices, coords
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
@@ -228,10 +265,10 @@ class TemporalRandomApply(RandomTransforms):
 class TemporalRandomChoice(RandomTransforms):
     """Apply single transformation randomly picked from a list
     """
-    def __call__(self, frame_indices):
+    def __call__(self, frame_indices, coords):
         t = random.choice(self.transforms)
         logging.info(str(t))
-        return t(frame_indices)
+        return t(frame_indices, coords)
     
     
     

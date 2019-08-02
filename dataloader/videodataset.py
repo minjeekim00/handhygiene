@@ -3,6 +3,7 @@ from torchvision.datasets.video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
 from torchvision.datasets.folder import make_dataset
 from torchvision.datasets.vision import VisionDataset
+from torchvision.transforms import functional as F
 
 
 class VideoDataset(VisionDataset):
@@ -21,9 +22,7 @@ class VideoDataset(VisionDataset):
         #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
-        
-    def __len__(self):
-        return self.video_clips.num_clips()
+    
     
     def __getitem__(self, idx):
         """
@@ -31,13 +30,12 @@ class VideoDataset(VisionDataset):
             label (int): class of the video clip
         """
         video, _, _, video_idx = self.video_clips.get_clip(idx)
+        video = self._to_pil_image(video)
         label = self.samples[video_idx][1]
         
         if self.temporal_transform is not None:
-            self.temporal_transform.randomize_parameters()
             video = [self.temporal_transform(img) for img in video]
-            
-        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             video = [self.spatial_transform(img) for img in video]
@@ -45,3 +43,17 @@ class VideoDataset(VisionDataset):
         video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
         return video, label
+    
+    
+    def _to_pil_image(self, video):
+        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        return [F.to_pil_image(img) for img in video]
+        
+    def __len__(self):
+        return self.video_clips.num_clips()
+    
+    def _get_clip_loc(self, idx):
+        vidx, cidx = self.video_clips.get_clip_location(idx)
+        vname, label = self.samples[vidx]
+        return (vidx, cidx)
+    

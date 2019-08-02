@@ -1,71 +1,49 @@
 import torch
 import torch.utils.data as data
-from .videodataset import * # TODO: explicit functions
-# get_framepaths, video_loader
+from torchvision.datasets.video_utils import VideoClips
+from torchvision.datasets.utils import list_dir
+from torchvision.datasets.folder import make_dataset
+from .videodataset import VideoDataset
+
+import os
 import sys
 sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 
-import os
-import numpy as np
-from PIL import Image
-from tqdm import tqdm
-from glob import glob
-import json
-import pandas as pd
 
 
-def default_loader(fnames):
-    rgbs = video_loader(fnames)
-    flows = optflow_loader(fnames)
-    return rgbs, flows
-
-def optflow_loader(fnames):
-    ffnames = get_flownames(fnames)
-    if any(not os.path.exists(f) for f in ffnames):
-        dir = os.path.split(fnames[0])[0]
-        cm.findOpticalFlow(dir, True, True, False, False)
-    return video_loader(ffnames)
-
-def get_flownames(fnames, reversed=False):
-    ffnames=[]
-    for img in fnames:
-        dir = os.path.split(img)[0]
-        tail = os.path.split(img)[1]
-        name, ext = os.path.splitext(tail)
-        if check_cropped_dir(dir): # remove last _
-            dir = '_'.join(dir.split('_')[:-1])
-        
-        flowdirname='flow' if not reversed else 'reverse_flow'
-        flow = os.path.join(dir, flowdirname, name+'_flow'+ext)
-        ffnames.append(flow)
-    return ffnames
-
-def check_cropped_dir(dir):
-    """ to check if the images in dir are temporally cropped from original data"""
-    basename = os.path.basename(dir)
-    return True if len(basename.split('_'))>3 else False
-
-class I3DDataset(VideoFolder):
-        
-    def __init__(self, root, split='train', clip_len=16, 
+class I3DDataset(VideoDataset):
+    def __init__(self, root, frames_per_clip, step_between_clips=1, 
                  spatial_transform=None,
                  temporal_transform=None,
-                 target_transform=None,
-                 preprocess=False, loader=default_loader, num_workers=1):
-        super(I3DDataset, self).__init__(root, split, clip_len,
+                 opt_flow_preprocess=False):
+        super(I3DDataset, self).__init__(root, frames_per_clip, 
+                                         step_between_clips=step_between_clips,
                                          spatial_transform=spatial_transform,
-                                         temporal_transform=temporal_transform,
-                                         target_transform=target_transform,
-                                         preprocess=preprocess, loader=loader)
-        self.root = root
-        self.loader = loader
-        self.num_workers = num_workers
-
-        if preprocess:
-            self.preprocess(num_workers)
-
-            
+                                         temporal_transform=temporal_transform)
+        
+        extensions = ('mp4',)
+        classes = list(sorted(list_dir(root)))
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
+        self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
+        self.classes = classes
+        video_list = [x[0] for x in self.samples]
+        optflow_list =  [self._optflow_path(x[0]) for x in self.samples]
+                                      
+        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips)
+        self.optflow_clips = VideoClips(optflow_list, frames_per_clip, step_between_clips)
+        
+        if opt_flow_preprocess:
+            self.preprocess()
+        #self.transform = transform
+        self.spatial_transform = spatial_transform
+        self.temporal_transform = temporal_transform
+    
+    
+    def _optflow_path(self, video_path):
+        v_name, v_ext = os.path.splitext(video_path)
+        return '{}_flow{}'.format(v_name, v_ext)
+                                      
     def __getitem__(self, index):
         # loading and preprocessing.
         fnames= self.samples[0][index]
@@ -91,24 +69,10 @@ class I3DDataset(VideoFolder):
         
         return clips, flows, target
     
-    def preprocess(self, num_workers):
-        useCuda=True
-        paths = [self.__getpath__(i) for i in range(self.__len__()) 
-                     if check_cropped_dir(self.__getpath__(i))]
-        if not useCuda:
-            from multiprocessing import Pool
-            from .opticalflow import cal_for_frames
-            from .opticalflow import cal_reverse
-            pool = Pool(num_workers)
-            pool.map(cal_for_frames, paths)
-            pool.map(cal_reverse, paths)
-            return
-        else:
-            for path in tqdm(paths):
-                cm.findOpticalFlow(path, useCuda, True, False, False)
-    
-    def __len__(self):
-        return len(self.samples[0]) # fnames
-    
-    def __getpath__(self, index):
-        return self.samples[0][index]
+    def preprocess(self, useCuda=True):
+        v_paths = self.samples
+        i_paths = [p.replace('videos','images') for p in v_paths]
+        i_paths = [os.path.splitext(p)[0] for p in i_paths]
+        
+        for path in tqdm(paths):
+            cm.findOpticalFlow(path, useCuda, True, False, False)
