@@ -56,4 +56,3 @@ class VideoDataset(VisionDataset):
         vidx, cidx = self.video_clips.get_clip_location(idx)
         vname, label = self.samples[vidx]
         return (vidx, cidx)
-    
