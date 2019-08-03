@@ -3,6 +3,7 @@ import torch.utils.data as data
 from torchvision.datasets import DatasetFolder
 from torchvision.datasets.folder import IMG_EXTENSIONS
 from torchvision.datasets.folder import has_file_allowed_extension
+from torchvision.transforms import functional as F
 
 import os
 import sys
@@ -128,22 +129,23 @@ class VideoFolder(DatasetFolder):
     
     def __getitem__(self, index):
         clip, vidx = self.video_clips[index]
-        #if self.temporal_transform is not None:
-        #    findices = self.temporal_transform(findices)
-        #clips = self.loader(findices)
+        clip = self._to_pil_image(clip)
         
-        #if self.spatial_transform is not None:
-        #    self.spatial_transform.randomize_parameters()
-        #    clips = [self.spatial_transform(img) for img in clips]
-        #clips = torch.stack(clips).permute(1, 0, 2, 3)
+        if self.temporal_transform is not None:
+            clip = self.temporal_transform(clip)
+        
+        if self.spatial_transform is not None:
+            self.spatial_transform.randomize_parameters()
+            clip = [self.spatial_transform(img) for img in clip]
 
         target = self.samples[1][vidx]
-        #if self.target_transform is not None:
-        #    target = self.target_transform(target)
-            
-        #targets = torch.tensor(targets).unsqueeze(0)
+        clip = torch.stack(clip).transpose(0, 1) # TCHW-->CTHW
+        target = torch.tensor(target).unsqueeze(0) # () -> (1,)
         return clip, target
     
+    def _to_pil_image(self, video):
+        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        return [F.to_pil_image(img) for img in video]
     
     def __len__(self):
         return len(self.video_clips)
