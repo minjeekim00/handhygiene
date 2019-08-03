@@ -48,12 +48,16 @@ def check_cropped_dir(dir):
 
 class I3DDataset(VideoFolder):
         
-    def __init__(self, root, split='train', clip_len=16, 
+    def __init__(self, root, split='train', 
+                 clip_length_in_frames=16, 
+                 frames_between_clips=1,
                  spatial_transform=None,
                  temporal_transform=None,
                  target_transform=None,
                  preprocess=False, loader=default_loader, num_workers=1):
-        super(I3DDataset, self).__init__(root, split, clip_len,
+        super(I3DDataset, self).__init__(root, split,
+                                         clip_length_in_frames=clip_length_in_frames,
+                                         frames_between_clips=frames_between_clips,
                                          spatial_transform=spatial_transform,
                                          temporal_transform=temporal_transform,
                                          target_transform=target_transform,

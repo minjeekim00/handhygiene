@@ -42,29 +42,25 @@ def default_loader(frames):
             
 def video_loader(frames):
     """
-        return: list of PIL Images
+        #return: list of PIL Images
+        return: list of numpy array
     """
     video = []
     for i, fname in enumerate(frames):
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
+            ## todo
+            img = np.asarray(img)
             video.append(img)   
     return video
 
 
 class VideoFolder(DatasetFolder):
-    """A generic data loader where the samples are arranged in this way: ::
-
-        root/class_x/video_name/images0001.ext
-        root/class_x/video_name/images0030.ext
-        root/class_x/xxz/images0001.ext
-
-        root/class_y/123/images0001.ext
-        root/class_y/nsdf3/images0001.ext
-        root/class_y/asd932_/images0001.ext
-    """
-    def __init__(self, root, split='train', clip_len=16, 
+    
+    def __init__(self, root, split='train', 
+                 clip_length_in_frames=16, 
+                 frames_between_clips=1,
                  spatial_transform=None,
                  temporal_transform=None,
                  target_transform=None,
@@ -80,13 +76,15 @@ class VideoFolder(DatasetFolder):
         
         classes, class_to_idx = self._find_classes(folder)
         self.classes = classes
-        self.class_to_idx = class_to_idx
         self.samples = make_dataset(folder, class_to_idx)
+        video_list = [x for x in self.samples[0]]
+        self.video_clips = self._clips_for_video(video_list,
+                                                 clip_length_in_frames,
+                                                 frames_between_clips)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.target_transform = target_transform
-        self.clip_len = clip_len
-        
+   
     def _find_classes(self, dir):
         if sys.version_info >= (3, 5):
             # Faster and available in Python 3.5 and above
@@ -96,29 +94,59 @@ class VideoFolder(DatasetFolder):
         classes.sort()
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         return classes, class_to_idx
+    
+    def _clips_for_video(self, video_list, size, step):
+        videos= self._get_videos(video_list)
+        video_clips=[]
+        for vidx, video in enumerate(videos):
+            clips = self._get_clips(video, size, step)
+            for clip in clips:
+                video_clips.append((clip, vidx))
         
+        print("{} clips from {} videos".format(len(video_clips), len(videos)))
+        return video_clips
+    
+    def _get_videos(self, video_paths):
+        videos = []
+        for path in video_paths:
+            frames = get_framepaths(path)
+            video = self.loader(frames)
+            videos.append(video)
+        return videos
+        
+    def _get_clips(self, video, size, step):
+        """ video: [T H W C]
+            return: [num_clips H W C size]
+        """
+        dim=0
+        video_t = torch.tensor(np.asarray(video)) # T HWC
+        if len(video_t) < size:
+            return [video_t]
+        video_t = video_t.unfold(dim, size, step) # N HWC T
+        video_t = video_t.permute(0, 4, 1, 2, 3)  # N T HWC
+        return video_t
+    
     def __getitem__(self, index):
-        fnames = self.samples[0][index]
-        findices = get_framepaths(fnames)
+        clip, vidx = self.video_clips[index]
+        #if self.temporal_transform is not None:
+        #    findices = self.temporal_transform(findices)
+        #clips = self.loader(findices)
         
-        if self.temporal_transform is not None:
-            findices = self.temporal_transform(findices)
-        clips = self.loader(findices)
-        
-        if self.spatial_transform is not None:
-            clips = [self.spatial_transform(img) for img in clips]
-        clips = torch.stack(clips).permute(1, 0, 2, 3)
+        #if self.spatial_transform is not None:
+        #    self.spatial_transform.randomize_parameters()
+        #    clips = [self.spatial_transform(img) for img in clips]
+        #clips = torch.stack(clips).permute(1, 0, 2, 3)
 
-        targets = self.samples[1][index]
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+        target = self.samples[1][vidx]
+        #if self.target_transform is not None:
+        #    target = self.target_transform(target)
             
         #targets = torch.tensor(targets).unsqueeze(0)
-        return clips, targets
+        return clip, target
     
     
     def __len__(self):
-        return len(self.samples[0]) # fnames
+        return len(self.video_clips)
     
-    def __getpath__(self, index):
-        return self.samples[0][index]
+    #def __getpath__(self, index):
+    #    return self.samples[0][index]
