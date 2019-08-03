@@ -100,7 +100,7 @@ class HandHygiene(I3DDataset):
         df = target_dataframe()
         keypoints = get_keypoints()
         folder = os.path.join(self.image_dir, split)
-        classes, class_to_idx = find_classes(folder)
+        classes, class_to_idx = self._find_classes(folder)
         
         self.loader = loader
         self.samples = make_dataset(folder, class_to_idx, df, keypoints, cropped)
