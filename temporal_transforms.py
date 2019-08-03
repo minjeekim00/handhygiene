@@ -1,6 +1,7 @@
 import random
 import math
 import logging 
+from datetime import datetime
 
 class LoopPadding(object):
     
@@ -58,6 +59,8 @@ class MirrorLoopPadding(LoopPadding):
     
     def __getmirror__(self, li, i):
         return list(reversed(li))[1:] if i == 0 or i/2 == 1 else li
+    
+    
         
     
 
@@ -132,6 +135,9 @@ class TemporalRandomCrop(object):
         video = video[int(begin_index):int(end_index)]
         return video
     
+    def randomize_parameters(self):
+        random.seed(datetime.now())
+    
     
 class RandomTransforms(object):
     """Base class for a list of transformations with randomness
@@ -194,5 +200,6 @@ class TemporalRandomChoice(RandomTransforms):
         #logging.info(str(t))
         return t(video)
     
-    
+    def randomize_parameters(self):
+        random.seed(datetime.now())
     

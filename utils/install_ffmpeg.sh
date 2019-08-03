@@ -18,8 +18,7 @@ cd ffmpeg-${version}
 # ubuntu 18.04
 #./configure --prefix=/usr/local/ffmpeg --enable-gpl --enable-version3 --enable-nonfree --enable-postproc --enable-pthreads --enable-libfdk_aac --enable-libmp3lame --enable-libtheora --enable-libx264 --enable-libxvid --enable-libxcb --enable-libvorbis
 # ubuntu < 18.04
-./configure --prefix=/usr/local/ffmpeg --disable-static --enable-shared --disable-doc
-
+./configure --prefix=/usr/local/ffmpeg --disable-static --enable-shared --disable-doc --enable-gpl --enable-libx264
 sudo make
 sudo make install
 

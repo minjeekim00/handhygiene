@@ -3,12 +3,14 @@ import torch.utils.data as data
 from torchvision.datasets.video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
 from torchvision.datasets.folder import make_dataset
+from torchvision.io.video import write_video
 from .videodataset import VideoDataset
 
 import os
 import sys
 sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
+import numpy as np
 
 class I3DDataset(VideoDataset):
     def __init__(self, root, frames_per_clip, step_between_clips=1, 
@@ -38,23 +40,24 @@ class I3DDataset(VideoDataset):
     
     def _optflow_path(self, video_path):
         f_type = self._optflow_type()
-        v_name, v_ext = os.path.splitext(video_path)
-        v_dir, v_name = os.path.split(v_name)
+        v_dir, v_name = os.path.split(video_path)
         
         if f_type in v_dir: # for flow dirs
-            v_dir = v_dir.replace(f_type+'/') # flow/ 제거
-            f_dir = os.path.join(v_dir, v_name, f_type)
+            f_dir = v_dir
         else:
             f_dir = os.path.join(v_dir, f_type)
             
         if not os.path.exists(f_dir):
+            print("creating flow directory: {}".format(f_dir))
             os.mkdir(f_dir)
-            
-        return os.path.join(f_dir, '{}{}'.format(v_name, v_ext))
+        
+        f_output=os.path.join(f_dir, v_name)
+        return f_output
     
-    def _optflow_type(reversed=False):
+    def _optflow_type(self):
         ### TODO: implement reversed version
-        return 'reverse_flow' if reversed else 'flow'
+        #'reverse_flow' if reversed else 'flow'
+        return 'flow'
     
     def __getitem__(self, idx):
         video, _, _, video_idx = self.video_clips.get_clip(idx)
@@ -65,8 +68,9 @@ class I3DDataset(VideoDataset):
         label = self.samples[video_idx][1]
         
         if self.temporal_transform is not None:
-            video = [self.temporal_transform(img) for img in video]
-            optflow = [self.temporal_transform(img) for img in optflow]
+            self.temporal_transform.randomize_parameters()
+            video = self.temporal_transform(video)
+            optflow = self.temporal_transform(optflow)
         
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
@@ -75,37 +79,17 @@ class I3DDataset(VideoDataset):
             
         video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
         optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
+        optflow = optflow[:-1,:,:,:] # 3->2 channel
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
         return video, optflow, label
     
+    
     def preprocess(self, useCuda=True):
         root = self.root
-        i_path = root.replace('videos','images')
-        
-        for label in os.listdir(i_path):
-            for i_name in os.listdir(os.path.join(i_path, label)):
-                path = os.path.join(i_path, label, i_name)
-                cm.findOpticalFlow(path, useCuda, True)
-            
-            ### TODO: make video
-            
-            #for phase in ['train', 'val', 'test']:
-            #    for label in ['clean', 'notclean']:
-            #        VIDEO_DIR = './data/videos/simulate/{}/{}/'.format(phase, label)
-            #        IMAGE_DIR = './data/images/simulate/{}/{}/'.format(phase, label)
-
-            #        for vname in os.listdir(IMAGE_DIR):
-            #            fps = 15
-            #            start = int(vname[-6:])
-            #            i_path_flow = os.path.join(IMAGE_DIR, vname, 'flow', vname[:-6]+'%06d_flow.jpg')
-            #            dst = os.path.join(VIDEO_DIR, 'flow', vname+'.mp4')
-            #            if not os.path.exists(dst):
-            #                !avconv -r $fps -start_number $start -i $i_path_flow -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p $dst -y
-            #if not hasVideo:
-            #    fps = 15
-            #    start = int(v_path[-6:])
-            #    v_path_flow = self._optflow_path(v_name)
-            #    i_path_flow = os.path.join(i_path, name, os.path.basename(v_path)[:-6]+'%06d_{}.jpg'.format(name))
-            #    print('avconv -r {} -start_number {} -i {} -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p {} -y'.format(fps, start, i_path_flow, v_path_flow))
-            #    os.system('avconv -r {} -start_number {} -i {} -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p {} -y'.format(fps, start, i_path_flow, v_path_flow))
-            
+        for label in os.listdir(root): 
+            for v_name in os.listdir(os.path.join(root, label)):
+                v_path = os.path.join(root, label, v_name)
+                v_output = self._optflow_path(v_path)
+                flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
+                flows = np.asarray(flows)
+                write_video(v_output, flows, fps=15)
