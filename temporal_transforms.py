@@ -1,41 +1,33 @@
 import random
 import math
 import logging 
+from datetime import datetime
 
 class LoopPadding(object):
     
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices, coords):
-        out = frame_indices
-        out_crd = {'torso': coords['torso'],
-                   'people': coords['people']}
-        
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        out, out_crd = self.loop(out, out_crd)
-        return (out, out_crd)
+    def __call__(self, video):
+        #video = self.__sizecheck__(video)
+        video = self.loop(video)
+        return video
     
-    def loop(self, out, out_crd):
-        n=10
-        people=out_crd['people'] #temp
-        for i, (index, p_crd) in enumerate((zip(out*n, people*n))):
-            if len(out) >= 16:
+    def loop(self, video):
+        for index in video:
+            if len(video) >= self.size:
                 break
-            out.append(index)
-            people.append(p_crd)
-            
-        out_crd['people']=people #update
-        return out, out_crd
+            video.append(index)
+        return video
     
-    def __sizecheck__(self, out, out_crd):
-        if len(out) >= self.size:
+    def __sizecheck__(self, video):
+        if len(video) >= self.size:
             transforms = TemporalRandomChoice([
                 TemporalBeginCrop(self.size),
                 TemporalRandomCrop(self.size),
                 TemporalCenterCrop(self.size)])
-            out, out_crd = transforms(out, out_crd)
-        return out, out_crd
+            video = transforms(video)
+        return video
 
 
 class MirrorPadding(LoopPadding):
@@ -44,15 +36,10 @@ class MirrorPadding(LoopPadding):
         super(MirrorPadding, self).__init__(size)
         self.size = size
 
-    def __call__(self, frame_indices, coords):
-        
-        out = frame_indices[::-1]
-        out_crd = {'torso': coords['torso'][::-1],
-                   'people': coords['people'][::-1]}
-        
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        out, out_crd = self.loop(out, out_crd)
-        return (out, out_crd)
+    def __call__(self, video):
+        video = video[::-1]
+        video = self.loop(video)
+        return video
     
     
 class MirrorLoopPadding(LoopPadding):
@@ -61,30 +48,19 @@ class MirrorLoopPadding(LoopPadding):
         super(MirrorLoopPadding, self).__init__(size)
         self.size = size
 
-    def __call__(self, frame_indices, coords):
-        #print("mirror loop padding...")
-        out = frame_indices
-        out_crd = {'torso': coords['torso'],
-                   'people': coords['people']}
-        
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        
+    def __call__(self, video):
         for i in range(100):
-            out += self.__getmirror__(frame_indices, i)
-            #out_crd['torso'] += self.__getmirror__(coords['torso'], i)
-            out_crd['people'] += self.__getmirror__(coords['people'], i)
+            video += self.__getmirror__(video, i)
             
-            if len(out) >= self.size:
-                out = out[:self.size]
-                #out_crd['torso'] = out_crd['torso'][:self.size]
-                out_crd['people'] = out_crd['people'][:self.size]
+            if len(video) >= self.size:
+                video = video[:self.size]
                 break
-            
-        return (out, out_crd)
-    
+        return video
     
     def __getmirror__(self, li, i):
         return list(reversed(li))[1:] if i == 0 or i/2 == 1 else li
+    
+    
         
     
 
@@ -99,28 +75,10 @@ class TemporalBeginCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices, coords):
-        
-        #print("begin cropping ...")
-        out = frame_indices[:self.size]
-        out_crd = {'torso': coords['torso'],
-                   'people': coords['people']}
-        
-        #out_crd['torso'] = out_crd['torso'][:self.size]
-        out_crd['people'] = out_crd['people'][:self.size]
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        
-        return (out, out_crd)
+    def __call__(self, video):
+        return video[:self.size]
     
-    def __sizecheck__(self, out, out_crd):
-        if len(out) < self.size:
-            transforms = TemporalRandomChoice([
-                LoopPadding(self.size),
-                MirrorPadding(self.size),
-                MirrorLoopPadding(self.size)])
-            out, out_crd = transforms(out, out_crd)
-        return out, out_crd
-
+    
 
 class TemporalCenterCrop(object):
     """Temporally crop the given frame indices at a center.
@@ -133,35 +91,20 @@ class TemporalCenterCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices, coords):
+    def __call__(self, video):
         """
         Args:
-            frame_indices (list): frame indices to be cropped.
+            video (list): PIL Images (frames) to be cropped.
         Returns:
             list: Cropped frame indices.
         """
         
-        center_index = len(frame_indices) // 2
+        center_index = len(video) // 2
         begin_index = max(0, center_index - (self.size // 2))
-        end_index = min(begin_index + self.size, len(frame_indices))
+        end_index = min(begin_index + self.size, len(video))
 
-        out = frame_indices[begin_index:end_index]
-        out_crd = {'torso': coords['torso'],
-                   'people': coords['people']}
-        #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
-        out_crd['people'] = out_crd['people'][begin_index:end_index]
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        
-        return (out, out_crd)
-    
-    def __sizecheck__(self, out, out_crd):
-        if len(out) < self.size:
-            transforms = TemporalRandomChoice([
-                LoopPadding(self.size),
-                MirrorPadding(self.size),
-                MirrorLoopPadding(self.size)])
-            out, out_crd = transforms(out, out_crd)
-        return out, out_crd
+        video = video[int(begin_index):int(end_index)]
+        return video
     
 
 class TemporalRandomCrop(object):
@@ -176,38 +119,25 @@ class TemporalRandomCrop(object):
     def __init__(self, size):
         self.size = size
 
-    def __call__(self, frame_indices, coords):
+    def __call__(self, video):
         """
         Args:
-            frame_indices (list): frame indices to be cropped.
+            video (list): frames to be cropped.
         Returns:
             list: Cropped frame indices.
         """
 
         #print("random cropping ...")
-        rand_end = max(0, len(frame_indices) - self.size - 1)
+        rand_end = max(0, len(video) - self.size - 1)
         begin_index = random.randint(0, rand_end)
-        end_index = min(begin_index + self.size, len(frame_indices))
+        end_index = min(begin_index + self.size, len(video))
 
-        out = frame_indices[begin_index:end_index]
-        out_crd = {'torso': coords['torso'],
-                   'people': coords['people']}
-        
-        #out_crd['torso'] = out_crd['torso'][begin_index:end_index]
-        out_crd['people'] = out_crd['people'][begin_index:end_index]
-        out, out_crd = self.__sizecheck__(out, out_crd)
-        
-        return (out, out_crd)
+        video = video[int(begin_index):int(end_index)]
+        return video
     
-    def __sizecheck__(self, out, out_crd):
-        if len(out) < self.size:
-            transforms = TemporalRandomChoice([
-                LoopPadding(self.size),
-                MirrorPadding(self.size),
-                MirrorLoopPadding(self.size)])
-            out, out_crd = transforms(out, out_crd)
-        return out, out_crd
-
+    def randomize_parameters(self):
+        random.seed(datetime.now())
+    
     
 class RandomTransforms(object):
     """Base class for a list of transformations with randomness
@@ -244,13 +174,13 @@ class TemporalRandomApply(RandomTransforms):
         super(TemporalRandomApply, self).__init__(transforms)
         self.p = p
 
-    def __call__(self, frame_indices, coords):
+    def __call__(self, video):
         if self.p < random.random():
-            return frame_indices, coords
+            return video
         
         for t in self.transforms:
-            frame_indices, coords = t(frame_indices, coords)
-        return frame_indices, coords
+            video = t(video)
+        return video
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '('
@@ -265,10 +195,11 @@ class TemporalRandomApply(RandomTransforms):
 class TemporalRandomChoice(RandomTransforms):
     """Apply single transformation randomly picked from a list
     """
-    def __call__(self, frame_indices, coords):
+    def __call__(self, video):
         t = random.choice(self.transforms)
-        logging.info(str(t))
-        return t(frame_indices, coords)
+        #logging.info(str(t))
+        return t(video)
     
-    
+    def randomize_parameters(self):
+        random.seed(datetime.now())
     
