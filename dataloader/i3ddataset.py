@@ -13,12 +13,15 @@ import common as cm
 import numpy as np
 
 class I3DDataset(VideoDataset):
-    def __init__(self, root, frames_per_clip, step_between_clips=1, 
+    def __init__(self, root, frames_per_clip, 
+                 step_between_clips=1,
+                 frame_rate=None,
                  spatial_transform=None,
                  temporal_transform=None,
                  opt_flow_preprocess=False):
-        super(I3DDataset, self).__init__(root, frames_per_clip, 
+        super(I3DDataset, self).__init__(root, frames_per_clip,
                                          step_between_clips=step_between_clips,
+                                         frame_rate=frame_rate,
                                          spatial_transform=spatial_transform,
                                          temporal_transform=temporal_transform)
         extensions = ('mp4',)
@@ -26,14 +29,14 @@ class I3DDataset(VideoDataset):
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         
         if opt_flow_preprocess:
-            self.preprocess()
+            self.preprocess(extensions[0])
             
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
         video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
         optflow_list = [x[0] for x in self.samples if 'flow' in x[0]]
-        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips)
-        self.optflow_clips = VideoClips(optflow_list, frames_per_clip, step_between_clips)
+        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
+        self.optflow_clips = VideoClips(optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
     
@@ -41,16 +44,11 @@ class I3DDataset(VideoDataset):
     def _optflow_path(self, video_path):
         f_type = self._optflow_type()
         v_dir, v_name = os.path.split(video_path)
-        
-        if f_type in v_dir: # for flow dirs
-            f_dir = v_dir
-        else:
-            f_dir = os.path.join(v_dir, f_type)
+        f_dir = os.path.join(v_dir, f_type)
             
         if not os.path.exists(f_dir):
             print("creating flow directory: {}".format(f_dir))
             os.mkdir(f_dir)
-        
         f_output=os.path.join(f_dir, v_name)
         return f_output
     
@@ -84,12 +82,15 @@ class I3DDataset(VideoDataset):
         return video, optflow, label
     
     
-    def preprocess(self, useCuda=True):
+    def preprocess(self, ext, useCuda=True):
         root = self.root
         for label in os.listdir(root): 
             for v_name in os.listdir(os.path.join(root, label)):
+                if ext not in v_name:
+                    continue
                 v_path = os.path.join(root, label, v_name)
                 v_output = self._optflow_path(v_path)
                 flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
-                flows = np.asarray(flows)
-                write_video(v_output, flows, fps=15)
+                if flows is not None:
+                    flows = np.asarray(flows)
+                    write_video(v_output, flows, fps=15)

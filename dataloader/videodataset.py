@@ -8,7 +8,9 @@ from torchvision.transforms import functional as F
 
 class VideoDataset(VisionDataset):
     
-    def __init__(self, root, frames_per_clip, step_between_clips=1, 
+    def __init__(self, root, frames_per_clip, 
+                 step_between_clips=1, 
+                 frame_rate=None,
                  spatial_transform=None,
                  temporal_transform=None):
         super(VideoDataset, self).__init__(root)
@@ -18,7 +20,7 @@ class VideoDataset(VisionDataset):
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
         video_list = [x[0] for x in self.samples]
-        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips)
+        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
         #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
