@@ -1,6 +1,9 @@
 import torch
 import torch.utils.data as data
-from .i3ddataset import * # get_framepaths, get_flownames
+from torchvision.datasets import DatasetFolder
+from torchvision.datasets.folder import IMG_EXTENSIONS
+from torchvision.datasets.folder import has_file_allowed_extension
+from torchvision.transforms import functional as F
 from .makedataset import make_hh_dataset
 from .makedataset import target_dataframe
 from .makedataset import get_keypoints
@@ -16,70 +19,47 @@ import sys
 sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 
-def make_dataset(dir, class_to_idx, df, data, cropped):
+
+def is_image_file(filename):
+    return has_file_allowed_extension(filename, IMG_EXTENSIONS)
+
+def make_dataset(dir, class_to_idx, df, data):
     exclusions = ['40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped)
+    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions)
     targets = labels_to_idx(labels)
     return [fnames, coords, targets]
 
+def get_framepaths(fname):
+    frames = sorted([os.path.join(fname, img) for img in os.listdir(fname)])
+    frames = [img for img in frames if is_image_file(img)]
+    return frames
+    
+def labels_to_idx(labels):
+    labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
+    return np.array([labels_dict[label] for label in labels], dtype=int)
 
-def default_loader(fnames, coords, cropped):
-    rgbs = video_loader(fnames, coords)
-    flows = optflow_loader(fnames, coords, cropped)
-    return rgbs, flows
-
-
-def video_loader(fnames, coords):
+def default_loader(frames):
+    return video_loader(frames)
+            
+def video_loader(frames):
     """
-        return: list of PIL Images
+        #return: list of PIL Images
+        return: list of numpy array
     """
     video = []
-    for i, fname in enumerate(fnames):
+    for i, fname in enumerate(frames):
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            video.append(img)
+            img = np.asarray(img)
+            video.append(img)   
     return video
 
 
-def optflow_loader(fnames, coords, cropped):
-    """
-        return: list of PIL Images
-    """
-    isReversed=check_reverse(fnames)
-    ffnames = get_flownames(fnames, isReversed, cropped)
-    if any(not os.path.exists(f) for f in ffnames):
-        dir = os.path.split(fnames[0])[0]
-        #cal_for_frames(dir)
-        cm.findOpticalFlow(dir, True, True, isReversed, cropped)
-        
-    return video_loader(ffnames, coords)
-
-
-def get_flownames(fnames, reversed, cropped):
-    ffnames=[]
-    for img in fnames:
-        dir = os.path.split(img)[0]
-        tail = os.path.split(img)[1]
-        name, ext = os.path.splitext(tail)
-        if len(dir.split('_'))>3: # for augmentated dir
-            dir = '_'.join(dir.split('_')[:-1])
-            
-        flowdirname='flow' if not reversed else 'reverse_flow'
-        flowdir=os.path.join(dir, flowdirname)
-        flow = os.path.join(flowdir, name+'_flow'+ext)
-        ffnames.append(flow)
-    return ffnames
-
-
-def check_reverse(frames):
-    return True if frames != sorted(frames) else False
-
-    
-class HandHygiene(I3DDataset):
+class HandHygiene(DatasetFolder):
         
     def __init__(self, root, split='train', 
                  clip_length_in_frames=16,
@@ -88,89 +68,140 @@ class HandHygiene(I3DDataset):
                  temporal_transform=None,
                  openpose_transform=None,
                  target_transform=None,
-                 preprocess=False, loader=default_loader, num_workers=1, cropped=True):
+                 preprocess=False, loader=default_loader, num_workers=1):
 
-        super(HandHygiene, self).__init__(root, split,
-                                         clip_length_in_frames=clip_length_in_frames,
-                                         frames_between_clips=frames_between_clips,
-                                         spatial_transform=spatial_transform,
-                                         temporal_transform=temporal_transform,
-                                         target_transform=target_transform,
-                                         preprocess=preprocess, loader=loader,
-                                         num_workers=num_workers)
-        
-        if cropped:
-            self.image_dir = os.path.join(root, 'cropped')
+        super(HandHygiene, self).__init__(root, loader, IMG_EXTENSIONS,
+                                          transform=spatial_transform,
+                                          target_transform=target_transform)
         df = target_dataframe()
         keypoints = get_keypoints()
-        folder = os.path.join(self.image_dir, split)
-        classes, class_to_idx = self._find_classes(folder)
         
         self.loader = loader
-        self.samples = make_dataset(folder, class_to_idx, df, keypoints, cropped)
+        self.video_dir = os.path.join(root, 'videos')
+        self.image_dir = os.path.join(root, 'images')
+        folder = os.path.join(self.image_dir, split)
+        
+        classes, class_to_idx = self._find_classes(folder)
+        self.classes = classes
+        self.samples = make_dataset(folder, class_to_idx, df, keypoints)
+        video_list = self.samples[0]
+        opflw_list = [os.path.join(x, 'flow') for x in self.samples[0]]
+        self.video_clips = self._clips_for_video(video_list,
+                                                 clip_length_in_frames,
+                                                 frames_between_clips)
+        self.opflw_clips = self._clips_for_video(opflw_list,
+                                                 clip_length_in_frames,
+                                                 frames_between_clips)
+        
+        self.spatial_transform = spatial_transform
+        self.temporal_transform = temporal_transform
+        self.target_transform = target_transform
         self.openpose_transform = openpose_transform
-        self.cropped = cropped
+        
         ## check optical flow
         if preprocess:
             self.preprocess(num_workers)
+    
+    def _find_classes(self, dir):
+        if sys.version_info >= (3, 5):
+            # Faster and available in Python 3.5 and above
+            classes = [d.name for d in os.scandir(dir) if d.is_dir()]
+        else:
+            classes = [d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))]
+        classes.sort()
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
+        return classes, class_to_idx
+    
+    def _clips_for_video(self, video_list, size, step):
+        
+        def istarget(path):
+            return False if 'notclean' in path else True
             
-            
+        videos= self._get_videos(video_list)
+        video_clips=[]
+        for vidx, video in enumerate(videos):
+            ### NOT CLEAN CONDITION
+            if not istarget(video_list[vidx]):
+                step = 4
+            clips = self._get_clips(video, size, step)
+            for cidx, clip in enumerate(clips):
+                video_clips.append((clip, vidx))
+                
+        print("{} clips from {} videos".format(len(video_clips), len(videos)))
+        return video_clips
+    
+    def _get_videos(self, video_paths):
+        videos = []
+        for path in video_paths:
+            frames = get_framepaths(path)
+            video = self.loader(frames)
+            videos.append(video)
+        return videos
+        
+    def _get_clips(self, video, size, step):
+        """ video: [T H W C]
+            return: [num_clips H W C size]
+        """
+        dim=0
+        video_t = torch.tensor(np.asarray(video)) # T HWC
+        if len(video_t) < size:
+            return video_t.unsqueeze(0)
+        video_t = video_t.unfold(dim, size, step) # N HWC T
+        video_t = video_t.permute(0, 4, 1, 2, 3)  # N T HWC
+        return video_t
+    
+    
     def __getitem__(self, index):
         # loading and preprocessing.
         
-        cropped = self.cropped
-        fnames= self.samples[0][index]
-        findices = get_framepaths(fnames)
-        coords= self.samples[1][index]
+        clip, vidx = self.video_clips[index]
+        flow, _ = self.opflw_clips[index]
+        coords = self.samples[1][vidx]
+        clip = self._to_pil_image(clip)
+        flow = self._to_pil_image(flow)
         
-        logging.info("sample: {}".format(index))
         if self.temporal_transform is not None:
-            ## TODO: applying reversed flow
-            findices, coords = self.temporal_transform(findices, coords)
-        clips, flows = self.loader(findices, coords, cropped)
-        
+            self.temporal_transform.randomize_parameters()
+            clip = self.temporal_transform(clip)
+            flow = self.temporal_transform(flow)
+            
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
-            streams = [self.openpose_transform(img, flow, coords, i)
-                       for i, (img, flow) in enumerate(zip(clips, flows))]
+            streams = [self.openpose_transform(c, f, coords, i)
+                       for i, (c, f) in enumerate(zip(clip, flow))]
             if len(streams[0])==0:
-                print(self.__getpath__(index), "windows empty")
-                print(coords)
-            clips = [stream[0] for stream in streams]
-            flows = [stream[1] for stream in streams]
-        
+                print("windows empty")
+            clip = [stream[0] for stream in streams]
+            flow = [stream[1] for stream in streams]
+            
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
-            clips = [self.spatial_transform(img) for img in clips]
-            flows = [self.spatial_transform(img) for img in flows]
-        
-        target = self.samples[2][index]
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-        
-        target = torch.tensor(target).unsqueeze(0)
-        clips = torch.stack(clips).permute(1, 0, 2, 3)
-        flows = [flow[:-1,:,:] for flow in flows]
-        flows = torch.stack(flows).permute(1, 0, 2, 3)
-        
-        return clips, flows, target
-        #return clips, flows, target, coords
-        
-        
-    def preprocess(self, num_workers):
-        useCuda=True
-        cropped=True
-        paths = [self.__getpath__(i) for i in range(self.__len__()) 
-                     if check_cropped_dir(self.__getpath__(i))]
-        if not useCuda:
-            from multiprocessing import Pool
-            from .opticalflow import cal_for_frames
-            from .opticalflow import cal_reverse
+            clip = [self.spatial_transform(img) for img in clip]
+            flow = [self.spatial_transform(img) for img in flow]
             
-            pool = Pool(num_workers)
-            pool.map(cal_for_frames, paths)
-            pool.map(cal_reverse, paths)
-            return
-        else:
-            for path in tqdm(paths):
-                cm.findOpticalFlow(path, useCuda, True, False, cropped)
+        target = self.samples[2][vidx]
+        clip = torch.stack(clip).transpose(0, 1) # TCHW-->CTHW
+        flow = torch.stack(flow).transpose(0, 1) # TCHW-->CTHW
+        flow = flow[:-1,:,:,:] # 3->2 channel
+        target = torch.tensor(target).unsqueeze(0) # () -> (1,)
+        return clip, flow, target
+    
+    def _to_pil_image(self, video):
+        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        return [F.to_pil_image(img) for img in video]
+    
+    def __len__(self):
+        return len(self.video_clips)
+    
+    def __ref__(self):
+        size = self.__len__()
+        labels=[]
+        for i in range(size):
+            clip, vidx = self.video_clips[i]
+            label = self.samples[2][vidx]
+            labels.append(label)
+        
+        num_clean = len([l for l in labels if l == 0])
+        num_notclean = len([l for l in labels if l == 1])
+        print("clean: {}, notclean: {}".format(num_clean, num_notclean))
+        

@@ -51,7 +51,6 @@ def video_loader(frames):
         with open(fname, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
-            ## todo
             img = np.asarray(img)
             video.append(img)   
     return video
@@ -78,7 +77,7 @@ class VideoFolder(DatasetFolder):
         classes, class_to_idx = self._find_classes(folder)
         self.classes = classes
         self.samples = make_dataset(folder, class_to_idx)
-        video_list = [x for x in self.samples[0]]
+        video_list = self.samples[0]
         self.video_clips = self._clips_for_video(video_list,
                                                  clip_length_in_frames,
                                                  frames_between_clips)
@@ -101,10 +100,8 @@ class VideoFolder(DatasetFolder):
         video_clips=[]
         for vidx, video in enumerate(videos):
             clips = self._get_clips(video, size, step)
-            for clip in clips:
+            for cidx, clip in enumerate(clips):
                 video_clips.append((clip, vidx))
-        
-        print("{} clips from {} videos".format(len(video_clips), len(videos)))
         return video_clips
     
     def _get_videos(self, video_paths):
@@ -122,7 +119,7 @@ class VideoFolder(DatasetFolder):
         dim=0
         video_t = torch.tensor(np.asarray(video)) # T HWC
         if len(video_t) < size:
-            return [video_t]
+            return video_t.unsqueeze(0)
         video_t = video_t.unfold(dim, size, step) # N HWC T
         video_t = video_t.permute(0, 4, 1, 2, 3)  # N T HWC
         return video_t

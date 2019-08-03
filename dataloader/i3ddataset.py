@@ -34,11 +34,7 @@ class I3DDataset(VideoFolder):
                                          preprocess=preprocess, loader=loader)
         
         folder = os.path.join(self.image_dir, split)
-        video_list = [x for x in self.samples[0]]
         opflw_list = [os.path.join(x, 'flow') for x in self.samples[0]]
-        self.video_clips = self._clips_for_video(video_list,
-                                                 clip_length_in_frames,
-                                                 frames_between_clips)
         self.opflw_clips = self._clips_for_video(opflw_list,
                                                  clip_length_in_frames,
                                                  frames_between_clips)
@@ -68,7 +64,8 @@ class I3DDataset(VideoFolder):
         flow = flow[:-1,:,:,:] # 3->2 channel
         target = torch.tensor(target).unsqueeze(0) # () -> (1,)
         return clip, flow, target
-    
+   
+
     def preprocess(self, num_workers):
         useCuda=True
         paths = self.samples[0]
