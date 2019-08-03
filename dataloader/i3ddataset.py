@@ -1,5 +1,6 @@
 import torch
 import torch.utils.data as data
+from .videodataset import VideoFolder
 from .videodataset import * # TODO: explicit functions
 # get_framepaths, video_loader
 import sys
@@ -14,37 +15,6 @@ from glob import glob
 import json
 import pandas as pd
 
-
-def default_loader(fnames):
-    rgbs = video_loader(fnames)
-    flows = optflow_loader(fnames)
-    return rgbs, flows
-
-def optflow_loader(fnames):
-    ffnames = get_flownames(fnames)
-    if any(not os.path.exists(f) for f in ffnames):
-        dir = os.path.split(fnames[0])[0]
-        cm.findOpticalFlow(dir, True, True, False, False)
-    return video_loader(ffnames)
-
-def get_flownames(fnames, reversed=False):
-    ffnames=[]
-    for img in fnames:
-        dir = os.path.split(img)[0]
-        tail = os.path.split(img)[1]
-        name, ext = os.path.splitext(tail)
-        if check_cropped_dir(dir): # remove last _
-            dir = '_'.join(dir.split('_')[:-1])
-        
-        flowdirname='flow' if not reversed else 'reverse_flow'
-        flow = os.path.join(dir, flowdirname, name+'_flow'+ext)
-        ffnames.append(flow)
-    return ffnames
-
-def check_cropped_dir(dir):
-    """ to check if the images in dir are temporally cropped from original data"""
-    basename = os.path.basename(dir)
-    return True if len(basename.split('_'))>3 else False
 
 class I3DDataset(VideoFolder):
         
@@ -62,43 +32,46 @@ class I3DDataset(VideoFolder):
                                          temporal_transform=temporal_transform,
                                          target_transform=target_transform,
                                          preprocess=preprocess, loader=loader)
-        self.root = root
-        self.loader = loader
-        self.num_workers = num_workers
-
+        
+        folder = os.path.join(self.image_dir, split)
+        video_list = [x for x in self.samples[0]]
+        opflw_list = [os.path.join(x, 'flow') for x in self.samples[0]]
+        self.video_clips = self._clips_for_video(video_list,
+                                                 clip_length_in_frames,
+                                                 frames_between_clips)
+        self.opflw_clips = self._clips_for_video(opflw_list,
+                                                 clip_length_in_frames,
+                                                 frames_between_clips)
         if preprocess:
             self.preprocess(num_workers)
 
             
     def __getitem__(self, index):
-        # loading and preprocessing.
-        fnames= self.samples[0][index]
-        findices = get_framepaths(fnames)
-        target = self.samples[1][index]
+        clip, vidx = self.video_clips[index]
+        flow, _ = self.opflw_clips[index]
+        clip = self._to_pil_image(clip)
+        flow = self._to_pil_image(flow)
         
         if self.temporal_transform is not None:
-            findices = self.temporal_transform(findices)
-        clips, flows = self.loader(findices)
-         
+            self.temporal_transform.randomize_parameters()
+            clip = self.temporal_transform(clip)
+            flow = self.temporal_transform(flow)
+        
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
-            clips = [self.spatial_transform(img) for img in clips]
-            flows = [self.spatial_transform(img) for img in flows]
-        
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-        target = torch.tensor(target).unsqueeze(0)
-       
-        clips = torch.stack(clips).permute(1, 0, 2, 3)
-        flows = [flow[:-1,:,:] for flow in flows]
-        flows = torch.stack(flows).permute(1, 0, 2, 3)
-        
-        return clips, flows, target
+            clip = [self.spatial_transform(img) for img in clip]
+            flow = [self.spatial_transform(img) for img in flow]
+
+        target = self.samples[1][vidx]
+        clip = torch.stack(clip).transpose(0, 1) # TCHW-->CTHW
+        flow = torch.stack(flow).transpose(0, 1) # TCHW-->CTHW
+        flow = flow[:-1,:,:,:] # 3->2 channel
+        target = torch.tensor(target).unsqueeze(0) # () -> (1,)
+        return clip, flow, target
     
     def preprocess(self, num_workers):
         useCuda=True
-        paths = [self.__getpath__(i) for i in range(self.__len__()) 
-                     if check_cropped_dir(self.__getpath__(i))]
+        paths = self.samples[0]
         if not useCuda:
             from multiprocessing import Pool
             from .opticalflow import cal_for_frames
@@ -110,9 +83,3 @@ class I3DDataset(VideoFolder):
         else:
             for path in tqdm(paths):
                 cm.findOpticalFlow(path, useCuda, True, False, False)
-    
-    def __len__(self):
-        return len(self.samples[0]) # fnames
-    
-    def __getpath__(self, index):
-        return self.samples[0][index]

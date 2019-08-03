@@ -28,7 +28,9 @@ class LoopPadding(object):
                 TemporalCenterCrop(self.size)])
             video = transforms(video)
         return video
-
+    
+    def randomize_parameters(self):
+        random.seed(datetime.now())
 
 class MirrorPadding(LoopPadding):
     

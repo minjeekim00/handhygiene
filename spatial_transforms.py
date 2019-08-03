@@ -531,7 +531,6 @@ class RandomAffine(object):
     @staticmethod
     def get_params(degrees, translate, scale_ranges, shears, img_size, seed):
         """Get parameters for affine transformation
-
         Returns:
             sequence: params to be passed to the affine transformation
         """
@@ -617,4 +616,3 @@ class ExtractSkinColor(object):
 
     def randomize_parameters(self):
         pass
-        
