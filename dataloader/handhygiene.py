@@ -57,7 +57,7 @@ class HandHygiene(I3DDataset):
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         self.classes = classes
         self.frames_per_clip = frames_per_clip
-        self.step={self.classes[0]:frames_between_clips,
+        self.step={self.classes[0]:step_between_clips,
                    self.classes[1]:4}
         self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
         self.openpose_transform = openpose_transform
@@ -69,7 +69,7 @@ class HandHygiene(I3DDataset):
         rois = self._get_clip_coord(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
-        label = self.samples[video_idx][2]
+        label = self.samples[2][video_idx]
         
         if self.temporal_transform is not None:
             self.temporal_transform.randomize_parameters()
@@ -79,7 +79,7 @@ class HandHygiene(I3DDataset):
             
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
-            streams = [self.openpose_transform(c, f, coords, i)
+            streams = [self.openpose_transform(c, f, rois, i)
                        for i, (c, f) in enumerate(zip(video, optflow))]
             if len(streams[0])==0:
                 print("windows empty")
