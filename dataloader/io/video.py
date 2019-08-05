@@ -9,21 +9,6 @@ from PIL import Image
 from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.datasets.folder import is_image_file
 from torchvision.datasets.folder import IMG_EXTENSIONS
-
-try:
-    import av
-    av.logging.set_level(av.logging.ERROR)
-except ImportError:
-    av = None
-
-
-def _check_av_available():
-    if av is None:
-        raise ImportError("""\
-PyAV is not installed, and is necessary for the video operations in torchvision.
-See https://github.com/mikeboers/PyAV#installation for instructions on how to
-install PyAV on your system.
-""")
         
 def get_frames(dirname):
     return sorted([os.path.join(dirname, file) 
@@ -32,6 +17,7 @@ def get_frames(dirname):
 
 
 def read_video(dirname, start_pts=0, end_pts=None):
+    
     frames = get_frames(dirname)
     video = []
     for i, frame in enumerate(frames):
@@ -40,8 +26,18 @@ def read_video(dirname, start_pts=0, end_pts=None):
             img = img.convert('RGB')
             img = np.asarray(img)
             video.append(img)
+            
+    if end_pts is None:
+        end_pts = len(video)-1
+
+    if end_pts < start_pts:
+        raise ValueError("end_pts should be larger than start_pts, got "
+                         "start_pts={} and end_pts={}".format(start_pts, end_pts))
+        
     video = np.asarray(video)
-    return (torch.tensor(video), torch.tensor([]), {'video_fps': 15.0})
+    video = torch.tensor(video)[start_pts:end_pts]
+    audio = torch.tensor([]) #tmp
+    return (video, audio, {'video_fps': 15.0})
 
 
 def read_video_timestamps(dirname):
@@ -61,6 +57,22 @@ def write_video(filename, video_array, fps, video_codec='libx264', options=None)
     fps : Number
         frames per second
     """
+    
+    try:
+        import av
+        av.logging.set_level(av.logging.ERROR)
+    except ImportError:
+        av = None
+
+
+    def _check_av_available():
+        if av is None:
+            raise ImportError("""\
+    PyAV is not installed, and is necessary for the video operations in torchvision.
+    See https://github.com/mikeboers/PyAV#installation for instructions on how to
+    install PyAV on your system.
+    """)
+        
     _check_av_available()
     video_array = torch.as_tensor(video_array, dtype=torch.uint8).numpy()
 

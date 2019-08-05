@@ -166,6 +166,6 @@ class VideoClips(object):
                 resampling_idx = resampling_idx - resampling_idx[0]
             video = video[resampling_idx]
             info["video_fps"] = self.frame_rate
-        if len(video) == self.num_frames:
+        if len(video) < self.num_frames:
             print("{} x {}".format(video.shape, self.num_frames))
         return video, audio, info, video_idx
