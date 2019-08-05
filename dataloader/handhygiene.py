@@ -56,6 +56,9 @@ class HandHygiene(I3DDataset):
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         self.classes = classes
+        self.frames_per_clip = frames_per_clip
+        self.step={self.classes[0]:frames_between_clips,
+                   self.classes[1]:4}
         self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
         self.openpose_transform = openpose_transform
         self.cropped = cropped
@@ -63,8 +66,7 @@ class HandHygiene(I3DDataset):
     def __getitem__(self, idx):
         video, _, _, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
-        coords = self.samples[video_idx][1]
-        
+        rois = self._get_clip_coord(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
         label = self.samples[video_idx][2]
@@ -73,6 +75,7 @@ class HandHygiene(I3DDataset):
             self.temporal_transform.randomize_parameters()
             video = self.temporal_transform(video)
             optflow = self.temporal_transform(optflow)
+            rois = self.temporal_transform(rois)
             
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
@@ -94,3 +97,29 @@ class HandHygiene(I3DDataset):
         optflow = optflow[:-1,:,:,:] # 3->2 channel
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
         return video, optflow, label
+    
+    
+    def _get_clip_coord(self, idx):
+        fpc = self.frames_per_clip
+        vidx, cidx = self.video_clips.get_clip_location(idx)
+        target = self.samples[2][vidx]
+        step = self.step[self.classes[target]]
+        start= cidx * step
+        coords = self.samples[1][vidx]
+        rois = self._smoothing(coords)
+        rois = rois[start:start+fpc]
+        return rois
+    
+    def _smoothing(self, coords):
+        from .poseroi import get_windows
+        from .poseroi import calc_roi
+        
+        windows = get_windows(coords)
+        if len(windows)==0:
+            print("empty windows", windows)
+            return windows
+        rois = calc_roi(windows)
+        for i, roi in enumerate(rois):
+            if roi==None:
+                rois[i] = [roi for roi in rois_tmp if roi != None][0]
+        return rois
