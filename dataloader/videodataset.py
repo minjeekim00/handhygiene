@@ -1,9 +1,32 @@
 import torch
-from torchvision.datasets.video_utils import VideoClips
+from .video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
 from torchvision.datasets.folder import make_dataset
+from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
+
+
+def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
+    import os
+    folders = []
+    dir = os.path.expanduser(dir)
+    if not ((extensions is None) ^ (is_valid_file is None)):
+        raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
+    if extensions is not None:
+        def is_valid_file(x):
+            return has_file_allowed_extension(x, extensions)
+    for target in sorted(class_to_idx.keys()):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+        for root, _, fnames in sorted(os.walk(d)):
+            if len(fnames) == 0:
+                continue
+            if all([is_valid_file(os.path.join(root, fname)) for fname in fnames]):
+                item = (root, class_to_idx[target])
+                folders.append(item)
+    return folders
 
 
 class VideoDataset(VisionDataset):
@@ -14,7 +37,7 @@ class VideoDataset(VisionDataset):
                  spatial_transform=None,
                  temporal_transform=None):
         super(VideoDataset, self).__init__(root)
-        extensions = ('mp4',)
+        extensions = ('',)
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
