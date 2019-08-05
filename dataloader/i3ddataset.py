@@ -39,7 +39,8 @@ class I3DDataset(VideoDataset):
         self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
-    
+        if opt_flow_preprocess:
+            self.preprocess(extensions[0])
     
     def _optflow_path(self, video_path):
         f_type = self._optflow_type()
@@ -93,4 +94,4 @@ class I3DDataset(VideoDataset):
                 flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
                 if flows is not None:
                     flows = np.asarray(flows)
-                    write_video(v_output, flows, fps=15)
+                    #write_video(v_output, flows, fps=15)
