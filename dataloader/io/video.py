@@ -46,7 +46,7 @@ def read_video(dirname, start_pts=0, end_pts=None):
 
 def read_video_timestamps(dirname):
     """ tmp function """
-    return (list(range(len(read_video(dirname)[0])*1024)), 15.0)
+    return (list(range(len(read_video(dirname)[0])*1)), 15.0)
     
     
 def write_video(filename, video_array, fps, video_codec='libx264', options=None):

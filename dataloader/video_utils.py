@@ -4,7 +4,6 @@ import bisect
 import math
 import torch
 from dataloader.io.video import read_video_timestamps, read_video
-
 from torchvision.datasets.utils import tqdm
 
 

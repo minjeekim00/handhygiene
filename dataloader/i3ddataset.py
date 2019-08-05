@@ -1,10 +1,10 @@
 import torch
 import torch.utils.data as data
-from torchvision.datasets.video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
-from torchvision.datasets.folder import make_dataset
 from torchvision.io.video import write_video
 from .videodataset import VideoDataset
+from .videodataset import make_dataset
+from .video_utils import VideoClips
 
 import os
 import sys
@@ -24,7 +24,7 @@ class I3DDataset(VideoDataset):
                                          frame_rate=frame_rate,
                                          spatial_transform=spatial_transform,
                                          temporal_transform=temporal_transform)
-        extensions = ('mp4',)
+        extensions = ('',)
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         
@@ -33,10 +33,10 @@ class I3DDataset(VideoDataset):
             
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
-        optflow_list = [x[0] for x in self.samples if 'flow' in x[0]]
-        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
-        self.optflow_clips = VideoClips(optflow_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
+        self.optflow_list = [x[0] for x in self.samples if '/flow' in x[0]]
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
     

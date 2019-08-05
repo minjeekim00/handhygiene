@@ -1,7 +1,6 @@
 import torch
 from .video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
-from torchvision.datasets.folder import make_dataset
 from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
@@ -42,8 +41,8 @@ class VideoDataset(VisionDataset):
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        video_list = [x[0] for x in self.samples]
-        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_list = [x[0] for x in self.samples]
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
         #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
