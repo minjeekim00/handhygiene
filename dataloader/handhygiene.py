@@ -70,7 +70,6 @@ class HandHygiene(I3DDataset):
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
         label = self.samples[2][video_idx]
-        
         if self.temporal_transform is not None:
             self.temporal_transform.randomize_parameters()
             video = self.temporal_transform(video)
@@ -79,14 +78,11 @@ class HandHygiene(I3DDataset):
             
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
-            streams = [self.openpose_transform(c, f, rois, i)
-                       for i, (c, f) in enumerate(zip(video, optflow))]
-            if len(streams[0])==0:
+            video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
+            optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
+            if len(video)==0:
                 print("windows empty")
-            clip = [stream[0] for stream in streams]
-            flow = [stream[1] for stream in streams]
             
-        
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             video = [self.spatial_transform(img) for img in video]

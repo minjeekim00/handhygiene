@@ -41,8 +41,9 @@ class VideoDataset(VisionDataset):
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        self.video_list = [x[0] for x in self.samples]
-        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        video_list = [x[0] for x in self.samples]
+        video_list = [x for x in video_list if 'reverse' not in x] ## TODO
+        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
         #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform

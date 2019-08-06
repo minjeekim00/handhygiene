@@ -172,7 +172,7 @@ def calc_roi(windows):
         buffer = []
         for roi in rois:
             buffer.append(list(roi))
-        return buffer
+    return buffer
 
 def moving_average(rois, period):
     #buffer = [np.nan] * period
