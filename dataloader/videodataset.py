@@ -44,6 +44,7 @@ class VideoDataset(VisionDataset):
         video_list = [x[0] for x in self.samples]
         video_list = [x for x in video_list if 'reverse' not in x] ## TODO
         self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
+        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform

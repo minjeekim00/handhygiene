@@ -1,9 +1,10 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets.utils import list_dir
+from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.io.video import write_video
-from .i3ddataset import I3DDataset
-from .videodataset import make_dataset
+from torchvision.datasets.vision import VisionDataset
+from torchvision.transforms import functional as F
 from .video_utils import VideoClips
 from .makedataset import make_hh_dataset
 from .makedataset import target_dataframe
@@ -31,10 +32,10 @@ def make_dataset(dir, class_to_idx, df, data, cropped):
                   '34_20190110_frames111213']
     fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped)
     targets = labels_to_idx(labels)
-    return [fnames, coords, targets]
+    return [x for x in zip(fnames, coords, targets)]
 
     
-class HandHygiene(I3DDataset):
+class HandHygiene(VisionDataset):
     def __init__(self, root, frames_per_clip, 
                  step_between_clips=1,
                  frame_rate=None,
@@ -43,25 +44,32 @@ class HandHygiene(I3DDataset):
                  temporal_transform=None,
                  opt_flow_preprocess=False, cropped=False):
 
-        super(HandHygiene, self).__init__(root, frames_per_clip,
-                                         step_between_clips=step_between_clips,
-                                         frame_rate=frame_rate,
-                                         spatial_transform=spatial_transform,
-                                         temporal_transform=temporal_transform)
-        
-        #if cropped:
-        #    self.root = os.path.join(self.root, 'cropped')
-        df = target_dataframe()
-        keypoints = get_keypoints()
+        super(HandHygiene, self).__init__(root)
+        extensions = ('',)
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
+        
+        if opt_flow_preprocess:
+            self.preprocess(extensions[0])
+            
+        df = target_dataframe()
+        keypoints = get_keypoints()
+        self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
         self.classes = classes
         self.frames_per_clip = frames_per_clip
         self.step={self.classes[0]:step_between_clips,
                    self.classes[1]:4}
-        self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
+        self.video_list = [x[0] for x in self.samples]
+        # TODO: use video_utils subset
+        self.optflow_list = [os.path.join(x, 'flow') for x in self.video_list]
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
+        self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
+        self.spatial_transform = spatial_transform
+        self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
+        
             
     def __getitem__(self, idx):
         video, _, _, video_idx = self.video_clips.get_clip(idx)
@@ -69,7 +77,7 @@ class HandHygiene(I3DDataset):
         rois = self._get_clip_coord(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
-        label = self.samples[2][video_idx]
+        label = self.samples[video_idx][2]
         if self.temporal_transform is not None:
             self.temporal_transform.randomize_parameters()
             video = self.temporal_transform(video)
@@ -95,13 +103,18 @@ class HandHygiene(I3DDataset):
         return video, optflow, label
     
     
+    def _get_clip_loc(self, idx):
+        vidx, cidx = self.video_clips.get_clip_location(idx)
+        vname, label = self.samples[vidx]
+        return (vidx, cidx)
+    
     def _get_clip_coord(self, idx):
         fpc = self.frames_per_clip
         vidx, cidx = self.video_clips.get_clip_location(idx)
-        target = self.samples[2][vidx]
+        target = self.samples[vidx][2]
         step = self.step[self.classes[target]]
         start= cidx * step
-        coords = self.samples[1][vidx]
+        coords = self.samples[vidx][1]
         rois = self._smoothing(coords)
         rois = rois[start:start+fpc]
         return rois
@@ -119,3 +132,42 @@ class HandHygiene(I3DDataset):
             if roi==None:
                 rois[i] = [roi for roi in rois_tmp if roi != None][0]
         return rois
+    
+    def preprocess(self, ext, useCuda=True):
+        root = self.root
+        for label in os.listdir(root): 
+            for v_name in os.listdir(os.path.join(root, label)):
+                if ext not in v_name:
+                    continue
+                v_path = os.path.join(root, label, v_name)
+                v_output = self._optflow_path(v_path)
+                flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
+                if flows is not None:
+                    flows = np.asarray(flows)
+                    #write_video(v_output, flows, fps=15)
+                    
+    
+    def _optflow_path(self, video_path):
+        f_type = self._optflow_type()
+        v_dir, v_name = os.path.split(video_path)
+        f_dir = os.path.join(v_dir, f_type)
+            
+        if not os.path.exists(f_dir):
+            print("creating flow directory: {}".format(f_dir))
+            os.mkdir(f_dir)
+        f_output=os.path.join(f_dir, v_name)
+        return f_output
+    
+    def _optflow_type(self):
+        ### TODO: implement reversed version
+        #'reverse_flow' if reversed else 'flow'
+        return 'flow'
+    
+    
+    def _to_pil_image(self, video):
+        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        return [F.to_pil_image(img) for img in video]
+        
+    def __len__(self):
+        return self.video_clips.num_clips()
+    

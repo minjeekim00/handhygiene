@@ -107,7 +107,11 @@ class VideoClips(object):
         self.frame_rate = frame_rate
         self.clips = []
         self.resampling_idxs = []
-        for video_pts, fps in zip(self.video_pts, self.video_fps):
+        for vidx, (video_pts, fps) in enumerate(zip(self.video_pts, self.video_fps)):
+            ##################################
+            if 'notclean' in self.video_paths[vidx]:
+                step = 4
+            ##################################
             clips, idxs = self.compute_clips_for_video(video_pts, num_frames, step, fps, frame_rate)
             self.clips.append(clips)
             self.resampling_idxs.append(idxs)

@@ -170,7 +170,7 @@ class RandomTransforms(object):
         format_string += '\n)'
         return format_string
     
-     def randomize_parameters(self):
+    def randomize_parameters(self):
         self.seed = datetime.now()
     
     
@@ -211,7 +211,7 @@ class TemporalRandomChoice(RandomTransforms):
     def __call__(self, video):
         random.seed(self.seed)
         t = random.choice(self.transforms)
-        print(str(t))
+        #print(str(t))
         #logging.info(str(t))
         return t(video)
 
