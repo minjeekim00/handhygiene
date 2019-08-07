@@ -69,15 +69,19 @@ class HandHygiene(VisionDataset):
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
-        
-            
-    def __getitem__(self, idx):
+   
+    def _make_item(self, idx):
         video, _, _, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
-        rois = self._get_clip_coord(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
         label = self.samples[video_idx][2]
+        return (video, optflow, label)
+            
+    def __getitem__(self, idx):
+        video, optflow, label = self._make_item(idx)
+        rois = self._get_clip_coord(idx)
+        
         if self.temporal_transform is not None:
             self.temporal_transform.randomize_parameters()
             video = self.temporal_transform(video)

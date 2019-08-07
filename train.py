@@ -87,6 +87,9 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
     
     with open(os.path.join(logpath, 'traing_logging.txt'), 'a') as log:
         for epoch in tqdm(range(num_epochs)[start_epoch:]):
+            if epoch == 0:
+                dataloaders[phase].dataset.set_use_cache(True)
+        
             for phase in ['train', 'val']:
                 if phase == 'train':
                     #scheduler['rgb'].step()
