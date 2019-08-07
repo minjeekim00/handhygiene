@@ -1,10 +1,11 @@
 import torch
 import torch.utils.data as data
-from torchvision.datasets.video_utils import VideoClips
 from torchvision.datasets.utils import list_dir
-from torchvision.datasets.folder import make_dataset
+from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.io.video import write_video
-from .videodataset import VideoDataset
+from torchvision.datasets.vision import VisionDataset
+from torchvision.transforms import functional as F
+from .video_utils import VideoClips
 
 import os
 import sys
@@ -12,19 +13,37 @@ sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 import numpy as np
 
-class I3DDataset(VideoDataset):
+
+def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
+    import os
+    folders = []
+    dir = os.path.expanduser(dir)
+    if not ((extensions is None) ^ (is_valid_file is None)):
+        raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
+    if extensions is not None:
+        def is_valid_file(x):
+            return has_file_allowed_extension(x, extensions)
+    for target in sorted(class_to_idx.keys()):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+        for root, _, fnames in sorted(os.walk(d)):
+            if len(fnames) == 0:
+                continue
+            if all([is_valid_file(os.path.join(root, fname)) for fname in fnames]):
+                item = (root, class_to_idx[target])
+                folders.append(item)
+    return folders
+
+class I3DDataset(VisionDataset):
     def __init__(self, root, frames_per_clip, 
                  step_between_clips=1,
                  frame_rate=None,
                  spatial_transform=None,
                  temporal_transform=None,
                  opt_flow_preprocess=False):
-        super(I3DDataset, self).__init__(root, frames_per_clip,
-                                         step_between_clips=step_between_clips,
-                                         frame_rate=frame_rate,
-                                         spatial_transform=spatial_transform,
-                                         temporal_transform=temporal_transform)
-        extensions = ('mp4',)
+        super(I3DDataset, self).__init__(root)
+        extensions = ('',)
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         
@@ -33,13 +52,15 @@ class I3DDataset(VideoDataset):
             
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
-        optflow_list = [x[0] for x in self.samples if 'flow' in x[0]]
-        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
-        self.optflow_clips = VideoClips(optflow_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
+        self.optflow_list = [x[0] for x in self.samples if '/flow' in x[0]]
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
+        self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
-    
+        if opt_flow_preprocess:
+            self.preprocess(extensions[0])
     
     def _optflow_path(self, video_path):
         f_type = self._optflow_type()
@@ -81,6 +102,17 @@ class I3DDataset(VideoDataset):
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
         return video, optflow, label
     
+    def _to_pil_image(self, video):
+        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
+        return [F.to_pil_image(img) for img in video]
+        
+    def __len__(self):
+        return self.video_clips.num_clips()
+    
+    def _get_clip_loc(self, idx):
+        vidx, cidx = self.video_clips.get_clip_location(idx)
+        vname, label = self.samples[vidx]
+        return (vidx, cidx)
     
     def preprocess(self, ext, useCuda=True):
         root = self.root
@@ -93,4 +125,4 @@ class I3DDataset(VideoDataset):
                 flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
                 if flows is not None:
                     flows = np.asarray(flows)
-                    write_video(v_output, flows, fps=15)
+                    #write_video(v_output, flows, fps=15)
