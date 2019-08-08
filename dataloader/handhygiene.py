@@ -1,13 +1,12 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets.utils import list_dir
+from torchvision.datasets.folder import IMG_EXTENSIONS
 from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.io.video import write_video
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 from .video_utils import VideoClips
-from .makedataset import make_hh_dataset
-from .makedataset import target_dataframe
 
 import os
 import sys
@@ -19,18 +18,20 @@ from tqdm import tqdm
 from glob import glob
 import logging
 
-def labels_to_idx(labels):
-    labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    return np.array([labels_dict[label] for label in labels], dtype=int)
 
-def make_dataset(dir, class_to_idx, df, cropped):
+def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     exclusions = ['40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, exclusions, cropped)
-    targets = labels_to_idx(labels)
-    return [x for x in zip(fnames, coords, targets)]
+    folders=[]
+    for label in os.listdir(os.path.join(dir)):
+        for fname in os.listdir(os.path.join(dir, label)):
+            if any([fname in ex for ex in exclusions]):
+                continue
+            item = (os.path.join(dir, label, fname), class_to_idx[label])
+            folders.append(item)
+    return folders
 
     
 class HandHygiene(VisionDataset):
@@ -40,7 +41,7 @@ class HandHygiene(VisionDataset):
                  openpose_transform=None,
                  spatial_transform=None,
                  temporal_transform=None,
-                 opt_flow_preprocess=False, cropped=False):
+                 opt_flow_preprocess=False, with_detection=False, cropped=False):
 
         super(HandHygiene, self).__init__(root)
         extensions = ('',)
@@ -50,8 +51,7 @@ class HandHygiene(VisionDataset):
         if opt_flow_preprocess:
             self.preprocess(extensions[0])
             
-        df = target_dataframe()
-        self.samples = make_dataset(self.root, class_to_idx, df, cropped)
+        self.samples = make_dataset(self.root, class_to_idx)
         self.classes = classes
         self.frames_per_clip = frames_per_clip
         self.step={self.classes[0]:step_between_clips,
@@ -59,7 +59,7 @@ class HandHygiene(VisionDataset):
         self.video_list = [x[0] for x in self.samples]
         # TODO: use video_utils subset
         self.optflow_list = [os.path.join(x, 'flow') for x in self.video_list]
-        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate, with_detection=with_detection)
         print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
@@ -74,7 +74,7 @@ class HandHygiene(VisionDataset):
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
 #         video = self._to_pil_image(video)
 #         optflow = self._to_pil_image(optflow)
-        label = self.samples[video_idx][2]
+        label = self.samples[video_idx][1]
         return (video, optflow, label)
             
     def __getitem__(self, idx):
