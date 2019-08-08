@@ -9,7 +9,7 @@ def is_image_file(filename):
     return has_file_allowed_extension(filename, IMG_EXTENSIONS)
 
 
-def make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped):
+def make_hh_dataset(dir, class_to_idx, df, exclusions, cropped):
     """
         fnames: name of directory containing images
         coords: dict containg people, torso coordinates
@@ -31,8 +31,9 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped):
                 frames = sorted([img for img in os.listdir(os.path.join(dir, label, fname))])
                 frames = [img for img in frames if is_image_file(img)]
                 isCropped = True if len(fname.split('_'))>3 else False
-
-                item = [row for row in data if row['imgpath'] in fname][0]
+                txtfile = os.path.join(dir, label, fname, fname+'.txt')
+                with open(txtfile, 'r') as f:
+                    item = json.load(f)
                 people = item['people']
                 npeople = np.array(people).shape[0]
                 torso = item['torso']
@@ -84,7 +85,7 @@ def make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped):
                 #        coords.append({'people':people[nidx], 'torso':torso[nidx]})
                 #        labels.append('notclean')
             except:
-                print(fname)
+                print("exception:", fname)
     
     print('Number of {} people: {:d}'.format(dir, len(fnames)))
     return fnames, coords, labels
@@ -94,19 +95,3 @@ def target_dataframe(path='./data/label.csv'):
      # target 있는 imgpath만 선별
     df = df[df['targets'].notnull()]
     return df
-
-def get_keypoints(path='./data/keypoints.txt'):
-    with open(path, 'r') as file:
-        data = json.load(file)
-        data = data['coord']
-        
-        if os.path.exists('./data/keypoints_notclean.txt'):
-            
-            with open('./data/keypoints_notclean.txt', 'r') as outfile:
-                ndata = json.load(outfile)
-                ndata = ndata['coord']
-
-                for item in ndata:
-                    data.append(item)
-
-        return data

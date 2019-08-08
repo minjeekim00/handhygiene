@@ -8,7 +8,6 @@ from torchvision.transforms import functional as F
 from .video_utils import VideoClips
 from .makedataset import make_hh_dataset
 from .makedataset import target_dataframe
-from .makedataset import get_keypoints
 
 import os
 import sys
@@ -24,12 +23,12 @@ def labels_to_idx(labels):
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
     return np.array([labels_dict[label] for label in labels], dtype=int)
 
-def make_dataset(dir, class_to_idx, df, data, cropped):
+def make_dataset(dir, class_to_idx, df, cropped):
     exclusions = ['40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped)
+    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, exclusions, cropped)
     targets = labels_to_idx(labels)
     return [x for x in zip(fnames, coords, targets)]
 
@@ -52,8 +51,7 @@ class HandHygiene(VisionDataset):
             self.preprocess(extensions[0])
             
         df = target_dataframe()
-        keypoints = get_keypoints()
-        self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
+        self.samples = make_dataset(self.root, class_to_idx, df, cropped)
         self.classes = classes
         self.frames_per_clip = frames_per_clip
         self.step={self.classes[0]:step_between_clips,
