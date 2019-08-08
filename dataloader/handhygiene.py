@@ -20,7 +20,6 @@ from tqdm import tqdm
 from glob import glob
 import logging
 
-
 def labels_to_idx(labels):
     labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
     return np.array([labels_dict[label] for label in labels], dtype=int)
@@ -69,41 +68,42 @@ class HandHygiene(VisionDataset):
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
-   
-    def _make_item(self, idx):
+
+
+
+    def _make_item(self, idx): 
         video, _, _, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
-        video = self._to_pil_image(video)
-        optflow = self._to_pil_image(optflow)
+#         video = self._to_pil_image(video)
+#         optflow = self._to_pil_image(optflow)
         label = self.samples[video_idx][2]
         return (video, optflow, label)
             
     def __getitem__(self, idx):
+        print("__getitem__", idx)
         video, optflow, label = self._make_item(idx)
-        rois = self._get_clip_coord(idx)
-        
-        if self.temporal_transform is not None:
-            self.temporal_transform.randomize_parameters()
-            video = self.temporal_transform(video)
-            optflow = self.temporal_transform(optflow)
-            rois = self.temporal_transform(rois)
-            
-        if self.openpose_transform is not None:
-            self.openpose_transform.randomize_parameters()
-            video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
-            optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
-            if len(video)==0:
-                print("windows empty")
-            
-        if self.spatial_transform is not None:
-            self.spatial_transform.randomize_parameters()
-            video = [self.spatial_transform(img) for img in video]
-            optflow = [self.spatial_transform(img) for img in optflow]
-            
-        video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
-        optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
-        optflow = optflow[:-1,:,:,:] # 3->2 channel
-        label = torch.tensor(label).unsqueeze(0) # () -> (1,)
+#         rois = self._get_clip_coord(idx)
+
+#         if self.temporal_transform is not None:
+#             self.temporal_transform.randomize_parameters()
+#             video = self.temporal_transform(video)
+#             optflow = self.temporal_transform(optflow)
+#             rois = self.temporal_transform(rois)
+#         if self.openpose_transform is not None:
+#             self.openpose_transform.randomize_parameters()
+#             video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
+#             optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
+#             if len(video)==0:
+#                 print("windows empty")
+#         if self.spatial_transform is not None:
+#             self.spatial_transform.randomize_parameters()
+#             video = [self.spatial_transform(img) for img in video]
+#             optflow = [self.spatial_transform(img) for img in optflow]
+#         video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
+#         optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
+#         optflow = optflow[:-1,:,:,:] # 3->2 channel
+#         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
+
         return video, optflow, label
     
     
@@ -174,4 +174,3 @@ class HandHygiene(VisionDataset):
         
     def __len__(self):
         return self.video_clips.num_clips()
-    

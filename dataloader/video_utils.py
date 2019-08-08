@@ -3,7 +3,9 @@
 import bisect
 import math
 import torch
-from dataloader.io.video import read_video_timestamps, read_video
+from dataloader.io.video import read_video_timestamps
+from dataloader.io.video import read_video_as_clip
+from dataloader.io.video import read_video
 from torchvision.datasets.utils import tqdm
 
 
@@ -27,6 +29,7 @@ class VideoClips(object):
         else:
             self._init_from_metadata(_precomputed_metadata)
         self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate)
+        self.cached_videos=[None for i in range(len(video_paths))]
 
     def _compute_frame_pts(self):
         self.video_pts = []
@@ -163,7 +166,16 @@ class VideoClips(object):
         clip_pts = self.clips[video_idx][clip_idx]
         start_pts = clip_pts[0].item()
         end_pts = clip_pts[-1].item()
-        video, audio, info = read_video(video_path, start_pts, end_pts)
+        
+        if self.cached_videos[video_idx] is None:
+            print("filling cache for video index: {}".format(video_idx))
+            self.cached_videos[video_idx]=read_video(video_path, 0, None)
+            print("full video length: {}".format(len(self.cached_videos[video_idx][0])))
+        video_full = self.cached_videos[video_idx][0]
+        print("video_path:{}".format(video_path))
+        print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
+        video, audio, info = read_video_as_clip(video_full, start_pts, end_pts)
+        
         if self.frame_rate is not None:
             resampling_idx = self.resampling_idxs[video_idx][clip_idx]
             if isinstance(resampling_idx, torch.Tensor):

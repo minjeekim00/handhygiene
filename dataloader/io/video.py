@@ -9,12 +9,12 @@ from PIL import Image
 from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.datasets.folder import is_image_file
 from torchvision.datasets.folder import IMG_EXTENSIONS
-        
+
+
 def get_frames(dirname):
     return sorted([os.path.join(dirname, file) 
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
-
 
 def read_video(dirname, start_pts=0, end_pts=None):
     
@@ -28,21 +28,27 @@ def read_video(dirname, start_pts=0, end_pts=None):
             video.append(img)
             
     if end_pts is None:
-        end_pts = len(video)-1
+        end_pts = len(video)
 
     if end_pts < start_pts:
         raise ValueError("end_pts should be larger than start_pts, got "
                          "start_pts={} and end_pts={}".format(start_pts, end_pts))
         
     video = np.asarray(video)
-    video = torch.tensor(video)[start_pts:end_pts]
+    video = torch.tensor(video)
+    return read_video_as_clip(video, start_pts, end_pts)
+
+def read_video_as_clip(video, start_pts, end_pts):
+    video = video[start_pts:end_pts+1]
     audio = torch.tensor([]) #tmp
-    return (video, audio, {'video_fps': 15.0})
+    info = {'video_fps': 15.0}
+    return (video, audio, info)
 
 
 def read_video_timestamps(dirname):
     """ tmp function """
-    return (list(range(len(read_video(dirname)[0])*1)), 15.0)
+    frames = get_frames(dirname)
+    return (list(range(len(frames)*1)), 15.0)
     
     
 def write_video(filename, video_array, fps, video_codec='libx264', options=None):
