@@ -1,22 +1,21 @@
 import os
 import re
 import gc
+import json
 import torch
 import numpy as np
+import pandas as pd
 from glob import glob
 from PIL import Image
-    
-from torchvision.datasets.folder import has_file_allowed_extension
-from torchvision.datasets.folder import is_image_file
-from torchvision.datasets.folder import IMG_EXTENSIONS
-        
+
+
 def get_frames(dirname):
+    from torchvision.datasets.folder import is_image_file
     return sorted([os.path.join(dirname, file) 
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
 
-
-def read_video(dirname, start_pts=0, end_pts=None):
+def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
     
     frames = get_frames(dirname)
     video = []
@@ -28,72 +27,96 @@ def read_video(dirname, start_pts=0, end_pts=None):
             video.append(img)
             
     if end_pts is None:
-        end_pts = len(video)-1
+        end_pts = len(video)
 
     if end_pts < start_pts:
         raise ValueError("end_pts should be larger than start_pts, got "
                          "start_pts={} and end_pts={}".format(start_pts, end_pts))
         
     video = np.asarray(video)
-    video = torch.tensor(video)[start_pts:end_pts]
+    video = torch.tensor(video)
     audio = torch.tensor([]) #tmp
-    return (video, audio, {'video_fps': 15.0})
+    info = {'video_fps': 15.0,
+           'body_keypoint': None}
+    
+    ## when has detection box in image frame
+    if has_bbox:
+        fname = os.path.basename(dirname)
+        txtfile = os.path.join(dirname, '{}.txt'.format(fname))
+        with open(txtfile, 'r') as f:
+            item = json.load(f)
+        
+        
+        ## this is to get body keypoint coordinates,
+        ## otherwise skip
+        if not True: #need_preprocess:
+            info['body_keypoint'] = item
+        else:
+            #print("item", item)
+            coords = preprocess_keypoints(dirname, item)
+            #sprint("coords", coords)
+            info['body_keypoint'] = coords
+    
+    sample = (video, audio, info)
+    return read_video_as_clip(sample, start_pts, end_pts, has_bbox)
+
+def read_video_as_clip(sample, start_pts, end_pts, has_bbox):
+    video, audio, info = sample
+    video = video[start_pts:end_pts+1]
+    
+    ##TODO: slicing keypoints
+    #info['body_keypoint'] = info['body_keypoint'][start_pts:end_pts+1]
+    #print(info)
+    return (video, audio, info)
 
 
 def read_video_timestamps(dirname):
     """ tmp function """
-    return (list(range(len(read_video(dirname)[0])*1)), 15.0)
+    frames = get_frames(dirname)
+    return (list(range(len(frames)*1)), 15.0)
+
+
+def target_dataframe(path='./data/label.csv'):
+    df=pd.read_csv(path)
+     # target 있는 imgpath만 선별
+    df = df[df['targets'].notnull()]
+    return df
+
+
+def preprocess_keypoints(dirname, item, df=target_dataframe()):
+    fname = dirname.split('/')[-1]
+    label = dirname.split('/')[-2]
+    frames = get_frames(dirname)
     
-    
-def write_video(filename, video_array, fps, video_codec='libx264', options=None):
-    """
-    Writes a 4d tensor in [T, H, W, C] format in a video file
-    Parameters
-    ----------
-    filename : str
-        path where the video will be saved
-    video_array : Tensor[T, H, W, C]
-        tensor containing the individual frames, as a uint8 tensor in [T, H, W, C] format
-    fps : Number
-        frames per second
-    """
-    
-    try:
-        import av
-        av.logging.set_level(av.logging.ERROR)
-    except ImportError:
-        av = None
+    people = item['people']
+    npeople = np.array(people).shape[0]
+    torso = item['torso']
+    tidxs = df[df['imgpath']==fname]['targets'].values # target idx
+    if len(tidxs) == 0:
+        print("{} target index not exists".format(dirname))
+        return [] 
+    else: 
+        tidxs = tidxs[0]
 
+    #class = df[df['imgpath']==fname]['class'].values[0] # label 
+    tidxs = [int(t) for t in tidxs.strip().split(',')]
+    nidxs = list(range(npeople))
+    nidxs = [int(n) for n in nidxs if n not in tidxs]
+    ## appending clean
+    for tidx in tidxs:
+        start=0
+        end=start+len(frames)
 
-    def _check_av_available():
-        if av is None:
-            raise ImportError("""\
-    PyAV is not installed, and is necessary for the video operations in torchvision.
-    See https://github.com/mikeboers/PyAV#installation for instructions on how to
-    install PyAV on your system.
-    """)
-        
-    _check_av_available()
-    video_array = torch.as_tensor(video_array, dtype=torch.uint8).numpy()
+        if len(frames) != len(people[tidx][start:end]):
+            print("<{}> coords difference of people {}"
+                      .format(fname, len(people[tidx]), len(frames), tidx))
+            print(people[tidx])
+            continue
 
-    container = av.open(filename, mode='w')
-
-    stream = container.add_stream(video_codec, rate=fps)
-    stream.width = video_array.shape[2]
-    stream.height = video_array.shape[1]
-    stream.pix_fmt = 'yuv420p' if video_codec != 'libx264rgb' else 'rgb24'
-    stream.options = options or {}
-
-    for img in video_array:
-        frame = av.VideoFrame.from_ndarray(img, format='rgb24')
-        frame.pict_type = 'NONE'
-        for packet in stream.encode(frame):
-            container.mux(packet)
-
-    # Flush stream
-    for packet in stream.encode():
-        container.mux(packet)
-
-    # Close the file
-    container.close()
-    
+        coords = {'people':people[tidx][start:end],
+                  'torso':torso[tidx][start:end]}
+#         else: ## TODO: change 224 to image shape
+#             coords = {'people': [[0, 0, 224, 224] for i in range(start, end)],
+#                       'torso':torso[tidx][start:end]}
+            
+    return coords

@@ -3,7 +3,9 @@
 import bisect
 import math
 import torch
-from dataloader.io.video import read_video_timestamps, read_video
+from dataloader.io.video import read_video_timestamps
+from dataloader.io.video import read_video_as_clip
+from dataloader.io.video import read_video
 from torchvision.datasets.utils import tqdm
 
 
@@ -20,13 +22,15 @@ def unfold(tensor, size, step, dilation=1):
 
 class VideoClips(object):
     def __init__(self, video_paths, clip_length_in_frames=16, frames_between_clips=1,
-                 frame_rate=None, _precomputed_metadata=None):
+                 frame_rate=None, _precomputed_metadata=None, with_detection=False):
         self.video_paths = video_paths
         if _precomputed_metadata is None:
             self._compute_frame_pts()
         else:
             self._init_from_metadata(_precomputed_metadata)
         self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate)
+        self.cached_data=[None for i in range(len(video_paths))]
+        self.with_detection = with_detection
 
     def _compute_frame_pts(self):
         self.video_pts = []
@@ -163,7 +167,17 @@ class VideoClips(object):
         clip_pts = self.clips[video_idx][clip_idx]
         start_pts = clip_pts[0].item()
         end_pts = clip_pts[-1].item()
-        video, audio, info = read_video(video_path, start_pts, end_pts)
+        has_bbox = self.with_detection
+        
+        if self.cached_data[video_idx] is None:
+            print("video_path:{}".format(video_path))
+            print("filling cache for video index: {}".format(video_idx))
+            self.cached_data[video_idx]=read_video(video_path, 0, None, has_bbox)
+            print("full video length: {}".format(len(self.cached_data[video_idx][0])))
+            
+#         print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
+        video, audio, info = read_video_as_clip(self.cached_data[video_idx], 
+                                                start_pts, end_pts, has_bbox)
         if self.frame_rate is not None:
             resampling_idx = self.resampling_idxs[video_idx][clip_idx]
             if isinstance(resampling_idx, torch.Tensor):

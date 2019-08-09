@@ -1,14 +1,12 @@
 import torch
 import torch.utils.data as data
 from torchvision.datasets.utils import list_dir
+from torchvision.datasets.folder import IMG_EXTENSIONS
 from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.io.video import write_video
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 from .video_utils import VideoClips
-from .makedataset import make_hh_dataset
-from .makedataset import target_dataframe
-from .makedataset import get_keypoints
 
 import os
 import sys
@@ -21,18 +19,32 @@ from glob import glob
 import logging
 
 
-def labels_to_idx(labels):
-    labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    return np.array([labels_dict[label] for label in labels], dtype=int)
-
-def make_dataset(dir, class_to_idx, df, data, cropped):
+def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     exclusions = ['40_20190208_frames026493',
                   '34_20190110_frames060785', #window
                   '34_20190110_frames066161',
                   '34_20190110_frames111213']
-    fnames, coords, labels = make_hh_dataset(dir, class_to_idx, df, data, exclusions, cropped)
-    targets = labels_to_idx(labels)
-    return [x for x in zip(fnames, coords, targets)]
+    folders=[]
+    for label in os.listdir(os.path.join(dir)):
+        for fname in os.listdir(os.path.join(dir, label)):
+            
+            # exceptions
+            if any([fname in ex for ex in exclusions]):
+                continue
+            txtfile = os.path.join(dir, label, fname, fname+'.txt')
+            if not os.path.exists(txtfile):
+                print("{} not exists".format(txtfile))
+                continue
+            from .io.video import target_dataframe
+            df = target_dataframe()
+            hastarget = len(df[df['imgpath']==fname].values)
+            if not hastarget:
+                continue
+            
+            # append item
+            item = (os.path.join(dir, label, fname), class_to_idx[label])
+            folders.append(item)
+    return folders
 
     
 class HandHygiene(VisionDataset):
@@ -42,7 +54,7 @@ class HandHygiene(VisionDataset):
                  openpose_transform=None,
                  spatial_transform=None,
                  temporal_transform=None,
-                 opt_flow_preprocess=False, cropped=False):
+                 opt_flow_preprocess=False, with_detection=True, cropped=False):
 
         super(HandHygiene, self).__init__(root)
         extensions = ('',)
@@ -52,9 +64,7 @@ class HandHygiene(VisionDataset):
         if opt_flow_preprocess:
             self.preprocess(extensions[0])
             
-        df = target_dataframe()
-        keypoints = get_keypoints()
-        self.samples = make_dataset(self.root, class_to_idx, df, keypoints, cropped)
+        self.samples = make_dataset(self.root, class_to_idx)
         self.classes = classes
         self.frames_per_clip = frames_per_clip
         self.step={self.classes[0]:step_between_clips,
@@ -62,63 +72,63 @@ class HandHygiene(VisionDataset):
         self.video_list = [x[0] for x in self.samples]
         # TODO: use video_utils subset
         self.optflow_list = [os.path.join(x, 'flow') for x in self.video_list]
-        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate, with_detection=with_detection)
         print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
-   
-    def _make_item(self, idx):
-        video, _, _, video_idx = self.video_clips.get_clip(idx)
+        
+
+    def _make_item(self, idx): 
+        video, _, info, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
-        label = self.samples[video_idx][2]
-        return (video, optflow, label)
+        label = self.samples[video_idx][1]
+        keypoints = info['body_keypoint']
+        if keypoints is None:
+            print("idx: {} not having keypoints".format(idx))
+        elif isinstance(keypoints, list) and len(keypoints) == 0:
+            print("idx: {} not having keypoints".format(idx))
             
+        rois = self._get_clip_coord(idx, keypoints)
+        return (video, optflow, rois, label)
+    
     def __getitem__(self, idx):
-        video, optflow, label = self._make_item(idx)
-        rois = self._get_clip_coord(idx)
+        print("__getitem__", idx)
+        video, optflow, rois, label = self._make_item(idx)
         
         if self.temporal_transform is not None:
             self.temporal_transform.randomize_parameters()
             video = self.temporal_transform(video)
             optflow = self.temporal_transform(optflow)
             rois = self.temporal_transform(rois)
-            
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
             video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
             optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
             if len(video)==0:
                 print("windows empty")
-            
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             video = [self.spatial_transform(img) for img in video]
             optflow = [self.spatial_transform(img) for img in optflow]
-            
         video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
         optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
         optflow = optflow[:-1,:,:,:] # 3->2 channel
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
+
         return video, optflow, label
     
     
-    def _get_clip_loc(self, idx):
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        vname, label = self.samples[vidx]
-        return (vidx, cidx)
-    
-    def _get_clip_coord(self, idx):
+    def _get_clip_coord(self, idx, coords):
         fpc = self.frames_per_clip
         vidx, cidx = self.video_clips.get_clip_location(idx)
-        target = self.samples[vidx][2]
+        target = self.samples[vidx][1]
         step = self.step[self.classes[target]]
         start= cidx * step
-        coords = self.samples[vidx][1]
         rois = self._smoothing(coords)
         rois = rois[start:start+fpc]
         return rois
@@ -174,4 +184,3 @@ class HandHygiene(VisionDataset):
         
     def __len__(self):
         return self.video_clips.num_clips()
-    

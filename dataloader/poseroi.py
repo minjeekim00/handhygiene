@@ -166,14 +166,17 @@ def calc_roi(windows):
         rois.append(roi)
         
     ## applying simple moving average
-        for i in list(range(len(rois)+1))[::-4]:
-            rois[i:] = moving_average(rois[i:], 4).T
+    #for i in list(range(len(rois)+1))[::-4]:
+    #    rois[i:] = moving_average(rois[i:], 4).T
+    rois = moving_average(rois, 4).T
             
-        buffer = []
-        for roi in rois:
-            buffer.append(list(roi))
+    buffer = []
+    for roi in rois:
+        buffer.append(list(roi))
     return buffer
 
+
+# TODO: switch to another temporal smoothing method
 def moving_average(rois, period):
     #buffer = [np.nan] * period
     buffer = np.zeros((4, len(rois)), dtype=int)
