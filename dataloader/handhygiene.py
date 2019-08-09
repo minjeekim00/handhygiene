@@ -54,7 +54,7 @@ class HandHygiene(VisionDataset):
                  openpose_transform=None,
                  spatial_transform=None,
                  temporal_transform=None,
-                 opt_flow_preprocess=False, with_detection=False, cropped=False):
+                 opt_flow_preprocess=False, with_detection=True, cropped=False):
 
         super(HandHygiene, self).__init__(root)
         extensions = ('',)
@@ -79,8 +79,7 @@ class HandHygiene(VisionDataset):
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
-
-
+        
 
     def _make_item(self, idx): 
         video, _, info, video_idx = self.video_clips.get_clip(idx)
@@ -90,16 +89,15 @@ class HandHygiene(VisionDataset):
         label = self.samples[video_idx][1]
         keypoints = info['body_keypoint']
         if keypoints is None:
-            print("idx: {} not having keypoints")
+            print("idx: {} not having keypoints".format(idx))
         elif isinstance(keypoints, list) and len(keypoints) == 0:
-            print("idx: {} not having keypoints")
+            print("idx: {} not having keypoints".format(idx))
             
         rois = self._get_clip_coord(idx, keypoints)
         return (video, optflow, rois, label)
     
     def __getitem__(self, idx):
         print("__getitem__", idx)
-        start = time.time()
         video, optflow, rois, label = self._make_item(idx)
         
         if self.temporal_transform is not None:

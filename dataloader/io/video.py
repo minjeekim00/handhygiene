@@ -41,10 +41,11 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
     
     ## when has detection box in image frame
     if has_bbox:
-        basename = os.path.basename(dirname)
-        txtfile = os.path.join(dirname, '{}.txt'.format(basename))
+        fname = os.path.basename(dirname)
+        txtfile = os.path.join(dirname, '{}.txt'.format(fname))
         with open(txtfile, 'r') as f:
             item = json.load(f)
+        
         
         ## this is to get body keypoint coordinates,
         ## otherwise skip
