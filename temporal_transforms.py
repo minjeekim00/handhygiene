@@ -30,7 +30,7 @@ class LoopPadding(object):
         return video
     
     def randomize_parameters(self):
-        random.seed(datetime.now())
+        pass
 
 class MirrorPadding(LoopPadding):
     
@@ -63,8 +63,6 @@ class MirrorLoopPadding(LoopPadding):
         return list(reversed(li))[1:] if i == 0 or i/2 == 1 else li
     
     
-        
-    
 
 class TemporalBeginCrop(object):
     """Temporally crop the given frame indices at a beginning.
@@ -80,6 +78,9 @@ class TemporalBeginCrop(object):
     def __call__(self, video):
         return video[:self.size]
     
+    def randomize_parameters(self):
+        pass
+   
     
 
 class TemporalCenterCrop(object):
@@ -107,6 +108,9 @@ class TemporalCenterCrop(object):
 
         video = video[int(begin_index):int(end_index)]
         return video
+ 
+    def randomize_parameters(self):
+        pass
     
 
 class TemporalRandomCrop(object):
@@ -138,7 +142,7 @@ class TemporalRandomCrop(object):
         return video
     
     def randomize_parameters(self):
-        random.seed(datetime.now())
+        pass
     
     
 class RandomTransforms(object):
@@ -147,9 +151,10 @@ class RandomTransforms(object):
         transforms (list or tuple): list of transformations
     """
 
-    def __init__(self, transforms):
+    def __init__(self, transforms, seed=0):
         assert isinstance(transforms, (list, tuple))
         self.transforms = transforms
+        self.seed = seed
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError()
@@ -161,6 +166,9 @@ class RandomTransforms(object):
             format_string += '    {0}'.format(t)
         format_string += '\n)'
         return format_string
+    
+    def randomize_parameters(self):
+        self.seed = datetime.now()
     
     
 class TemporalRandomApply(RandomTransforms):
@@ -195,10 +203,12 @@ class TemporalRandomApply(RandomTransforms):
 class TemporalRandomChoice(RandomTransforms):
     """Apply single transformation randomly picked from a list
     """
+ 
     def __call__(self, video):
+        random.seed(self.seed)
         t = random.choice(self.transforms)
+        #print(str(t))
         #logging.info(str(t))
         return t(video)
-    
-    def randomize_parameters(self):
-        random.seed(datetime.now())
+
+

@@ -87,9 +87,9 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
     
     with open(os.path.join(logpath, 'traing_logging.txt'), 'a') as log:
         for epoch in tqdm(range(num_epochs)[start_epoch:]):
-            #if epoch > 300:
-            #    flowonly=True
-
+            if epoch == 0:
+                dataloaders[phase].dataset.set_use_cache(True)
+        
             for phase in ['train', 'val']:
                 if phase == 'train':
                     #scheduler['rgb'].step()
@@ -111,11 +111,10 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                     targets = Variable(samples[2].to(device)).float()
 
                     ##### rgb model
-                    if not flowonly:
-                        optimizer['rgb'].zero_grad()
-                        rgbs = Variable(rgbs.to(device))
-                        rgb_out_vars, rgb_out_logits = i3d_rgb(rgbs)
-                        rgb_preds = torch.round(rgb_out_vars.data)
+                    optimizer['rgb'].zero_grad()
+                    rgbs = Variable(rgbs.to(device))
+                    rgb_out_vars, rgb_out_logits = i3d_rgb(rgbs)
+                    rgb_preds = torch.round(rgb_out_vars.data)
 
                     ##### flow model
                     optimizer['flow'].zero_grad()
@@ -124,11 +123,7 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                     flow_preds = torch.round(flow_out_vars.data)
 
                     with torch.set_grad_enabled(phase == 'train'):
-                        ##### joint model
-                        if not flowonly: 
-                            out_logit = rgb_out_logits + flow_out_logits
-                        else: 
-                            out_logit = flow_out_logits
+                        out_logit = rgb_out_logits + flow_out_logits
                         out_sigmoid = torch.sigmoid(out_logit)
                         out_preds = torch.round(out_sigmoid.data)
                         out_loss= criterion(out_sigmoid, targets).to(device)
@@ -140,57 +135,49 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                             optimizer['flow'].step()
 
                     running_loss += out_loss.item() * rgbs.size(0)
-                    if not flowonly:
-                        running_corrects['rgb'] += torch.sum(rgb_preds.to(device) == targets.to(device)) 
-                        running_corrects['joint'] += torch.sum(out_preds.to(device) == targets.to(device))
+                    running_corrects['rgb'] += torch.sum(rgb_preds.to(device) == targets.to(device))
+                    running_corrects['joint'] += torch.sum(out_preds.to(device) == targets.to(device))
                     running_corrects['flow'] += torch.sum(flow_preds.to(device) == targets.to(device))
-
 
                 ## for plotting 
                 # per epoch
                 if phase == 'train':
                     train_epoch_loss = running_loss / len(dataloaders[phase].dataset)
-                    if not flowonly:
-                        train_epoch_rgb_acc = running_corrects['rgb'].double()  / len(dataloaders[phase].dataset)
-                        train_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
+                    train_epoch_rgb_acc = running_corrects['rgb'].double()  / len(dataloaders[phase].dataset)
+                    train_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
                     train_epoch_flow_acc = running_corrects['flow'].double()  / len(dataloaders[phase].dataset)
                 else:
                     valid_epoch_loss = running_loss / len(dataloaders[phase].dataset)
-                    if not flowonly:
-                        valid_epoch_rgb_acc = running_corrects['rgb'].double() / len(dataloaders[phase].dataset)
-                        valid_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
+                    valid_epoch_rgb_acc = running_corrects['rgb'].double() / len(dataloaders[phase].dataset)
+                    valid_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
                     valid_epoch_flow_acc = running_corrects['flow'].double() / len(dataloaders[phase].dataset)
 
                 # deep copy best model
                 if phase == 'val':
-                    if not flowonly:
-                        if valid_epoch_rgb_acc > best_acc['rgb']:
-                            best_acc['rgb'] = valid_epoch_rgb_acc
-                            best_model_wts['rgb'] = copy.deepcopy(i3d_rgb.state_dict())
-                            best_iters['rgb'] = iterations['train']
-                        if valid_epoch_joint_acc > best_acc['joint']:
-                            best_acc['joint'] = valid_epoch_joint_acc
-                            best_model_wts['joint']['rgb'] = copy.deepcopy(i3d_rgb.state_dict())
-                            best_model_wts['joint']['flow'] = copy.deepcopy(i3d_flow.state_dict())
-                            best_iters['joint'] = iterations['train']
-
+                    if valid_epoch_rgb_acc > best_acc['rgb']:
+                        best_acc['rgb'] = valid_epoch_rgb_acc
+                        best_model_wts['rgb'] = copy.deepcopy(i3d_rgb.state_dict())
+                        best_iters['rgb'] = iterations['train']
                     if valid_epoch_flow_acc > best_acc['flow']:
                         best_acc['flow'] = valid_epoch_flow_acc
                         best_model_wts['flow'] = copy.deepcopy(i3d_flow.state_dict())
                         best_iters['flow'] = iterations['train']
-
+                    if valid_epoch_joint_acc > best_acc['joint']:
+                        best_acc['joint'] = valid_epoch_joint_acc
+                        best_model_wts['joint']['rgb'] = copy.deepcopy(i3d_rgb.state_dict())
+                        best_model_wts['joint']['flow'] = copy.deepcopy(i3d_flow.state_dict())
+                        best_iters['joint'] = iterations['train']
 
             writer.add_scalars('Loss', {'training': train_epoch_loss, 
                                         'validation': valid_epoch_loss}, epoch)
 
-            if not flowonly:
-                writer.add_scalars('Accuracy', {'training_rgb': train_epoch_rgb_acc, 
+            writer.add_scalars('Accuracy', {'training_rgb': train_epoch_rgb_acc, 
                                                 'training_flow': train_epoch_flow_acc,
                                                 'training_joint': train_epoch_joint_acc,
                                                 'validation_rgb': valid_epoch_rgb_acc,
                                                 'validation_flow': valid_epoch_flow_acc,
                                                 'validation_joint': valid_epoch_joint_acc}, epoch)
-                log.write(str(train_epoch_loss)+','
+            log.write(str(train_epoch_loss)+','
                           +str(valid_epoch_loss)+','
                           +str(train_epoch_rgb_acc.item())+','
                           +str(train_epoch_flow_acc.item())+','
@@ -198,38 +185,28 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                           +str(valid_epoch_rgb_acc.item())+','
                           +str(valid_epoch_flow_acc.item())+','
                           +str(valid_epoch_joint_acc.item())+'\n')
-            else:
-                writer.add_scalars('Accuracy', {'training_flow': train_epoch_flow_acc,
-                                                'validation_flow': valid_epoch_flow_acc}, epoch)
-            if not flowonly:    
-                torch.save(i3d_rgb.state_dict(), 
+            
+            
+            torch.save(i3d_rgb.state_dict(), 
                        os.path.join('./weights/{}/{}_{}_epoch_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', epoch)))
             torch.save(i3d_flow.state_dict(), 
                    os.path.join('./weights/{}/{}_{}_epoch_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', epoch)))
 
-            print('Epoch [{}/{}] train loss: {:.4f} acc: {:.4f} ' 'valid loss: {:.4f} acc: {:.4f}'.format(
-                            epoch, num_epochs - 1,
-                            train_epoch_loss, train_epoch_joint_acc if not flowonly else train_epoch_flow_acc, 
-                            valid_epoch_loss, valid_epoch_joint_acc if not flowonly else valid_epoch_flow_acc))
+            print('Epoch [{}/{}] train loss: {:.4f} acc: {:.4f} ' 'valid loss: {:.4f} acc: {:.4f}'.format(epoch, num_epochs - 1, train_epoch_loss, train_epoch_joint_acc, valid_epoch_loss, valid_epoch_joint_acc))
 
-        if not flowonly: 
-            print('Best Joint val Acc: {:4f}'.format(best_acc['joint']))
-            print('Best RGB val Acc: {:4f}'.format(best_acc['rgb']))
+        print('Best Joint val Acc: {:4f}'.format(best_acc['joint']))
+        print('Best RGB val Acc: {:4f}'.format(best_acc['rgb']))
         print('Best Flow val Acc: {:4f}'.format(best_acc['flow']))
 
         ## for joint model
-        if not flowonly:
-            i3d_rgb.load_state_dict(best_model_wts['joint']['rgb'])
-            i3d_flow.load_state_dict(best_model_wts['joint']['flow'])
-            torch.save(i3d_rgb.state_dict(), 
-                       os.path.join('./weights/{}/{}_{}_bestiters_joint_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', best_iters['joint'])))
-            torch.save(i3d_flow.state_dict(), 
-                       os.path.join('./weights/{}/{}_{}_bestiters_joint_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', best_iters['joint'])))
+        i3d_rgb.load_state_dict(best_model_wts['joint']['rgb'])
+        i3d_flow.load_state_dict(best_model_wts['joint']['flow'])
+        torch.save(i3d_rgb.state_dict(), os.path.join('./weights/{}/{}_{}_bestiters_joint_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', best_iters['joint'])))
+        torch.save(i3d_flow.state_dict(), os.path.join('./weights/{}/{}_{}_bestiters_joint_{}.pth'.format(model_name, 'handhygiene', 'i3d_flow', best_iters['joint'])))
 
         ## for rgb/flow model
-        if not flowonly:
-            i3d_rgb.load_state_dict(best_model_wts['rgb'])
-            torch.save(i3d_rgb.state_dict(), 
+        i3d_rgb.load_state_dict(best_model_wts['rgb'])
+        torch.save(i3d_rgb.state_dict(), 
                    os.path.join('./weights/{}/{}_{}_bestiters_{}.pth'.format(model_name, 'handhygiene', 'i3d_rgb', best_iters['rgb'])))
 
         i3d_flow.load_state_dict(best_model_wts['flow'])

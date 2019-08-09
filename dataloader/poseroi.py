@@ -117,7 +117,7 @@ def get_windows(coords):
         except:
             print("{} fail to calculate margin".format(i))
             windows.append(None)
-        return windows
+    return windows
     
 def calc_margin(torso, track_window):
     m = 20 # margin
@@ -161,18 +161,22 @@ def calc_roi(windows):
         x_m = int((max_w-w)/2)
         y_m = int((max_h-h)/2)
         x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-        roi = align_boundingbox([x,y,w,h])
+        
+        roi = [x,y,w,h]
         rois.append(roi)
         
     ## applying simple moving average
-    for i in list(range(1, len(rois)))[::-1]:
-        rois = moving_average(rois, i).T
+    #for i in list(range(len(rois)+1))[::-4]:
+    #    rois[i:] = moving_average(rois[i:], 4).T
+    rois = moving_average(rois, 4).T
             
     buffer = []
     for roi in rois:
         buffer.append(list(roi))
     return buffer
 
+
+# TODO: switch to another temporal smoothing method
 def moving_average(rois, period):
     #buffer = [np.nan] * period
     buffer = np.zeros((4, len(rois)), dtype=int)

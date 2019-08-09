@@ -31,7 +31,7 @@ class CropTorso(object):
         self.size = size
         self.interpolation = interpolation
 
-    def __call__(self, img, flow, coords, index):
+    def __call__(self, img, coords, index):
         """
         Args:
             img (PIL.Image): Image to be scaled.
@@ -46,24 +46,20 @@ class CropTorso(object):
         x, y, w, h = roi
         if isinstance(self.size, int):
             img = img.crop((x, y, (x+w), (y+h)))
-            flow = flow.crop((x, y, (x+w), (y+h)))
             w, h = img.size
             if (w <= h and w == self.size) or (h <= w and h == self.size):
                 return (img, flow)
             if w < h:
                 ow = self.size
                 oh = int(self.size * h / w)
-                return (img.resize((ow, oh), self.interpolation),
-                        flow.resize((ow, oh), self.interpolation))
+                return img.resize((ow, oh), self.interpolation)
             else:
                 oh = self.size
                 ow = int(self.size * w / h)
-                return (img.resize((ow, oh), self.interpolation),
-                        flow.resize((ow, oh), self.interpolation))
+                return img.resize((ow, oh), self.interpolation)
         else:
-            return (img.resize(self.size, self.interpolation),
-                    flow.resize(self.size, self.interpolation))
-
+            return img.resize(self.size, self.interpolation)
+        
         
     def get_windows(self, coords):
         people = coords['people']
@@ -165,28 +161,14 @@ class MultiScaleTorsoRandomCrop(CropTorso):
         self.scales = scales
         self.centercrop = centercrop    
             
-    def __call__(self, img, flow, coords, index):
+    def __call__(self, img, rois, index):
         """
         Args:
             img (PIL.Image): Image to be scaled.
         Returns:
             PIL.Image: Rescaled image.
         """
-        
-        if self.scale > 1:
-            windows = self.get_windows(coords)
-            if len(windows)==0:
-                print(self, "empty windows", windows)
-                return windows
-            rois = self.calc_roi(windows)
-        else:
-            rois = [win for win in coords['people']]
-        
-        #print(len(rois), "index:{}".format(index))
         roi = rois[index]
-        if roi==None:
-            roi=[roi for roi in rois if roi != None][0]
-            if roi==None: print(self, roi, "None type roi")
         x, y, w, h = roi
         
         if isinstance(self.size, int):
@@ -203,9 +185,8 @@ class MultiScaleTorsoRandomCrop(CropTorso):
             y2 = y + crop_size_h
 
             img = img.crop((x, y, x2, y2))
-            flow = flow.crop((x, y, x2, y2))
-            return (img.resize((self.size, self.size), self.interpolation),
-                    flow.resize((self.size, self.size), self.interpolation))
+            return img.resize((self.size, self.size), self.interpolation)
+        
         
     def cal_extra_margin(self, window, scale=1.75):
         """ 일단 1.75배 사이즈로 뻥튀기기 for augmentation """
@@ -220,42 +201,6 @@ class MultiScaleTorsoRandomCrop(CropTorso):
 
         return [x, y, crop_size, crop_size]
     
-    def calc_roi(self, windows):
-        """ post processing on missing windows / temporal smoothing  """
-        if len(windows)==0:
-            print("empty windows")
-            
-        ws = np.array(windows).T[2]
-        hs = np.array(windows).T[3]
-        max_w, max_w_idx = np.max(ws), np.argmax(ws)
-        max_h, max_h_idx = np.max(hs), np.argmax(hs)
-        
-        rois = []
-        for i, track_window in enumerate(windows):
-            x, y, w, h = track_window
-
-            if w == 0 and h == 0:
-                # bring the first element having w, h
-                x, y, w, h = [t for t in windows if t[2] != 0 and t[3] != 0][0]
-
-            x_m = int((max_w-w)/2)
-            y_m = int((max_h-h)/2)
-            x, y, w, h = x-x_m, y-y_m, w+(x_m)*2, h+(y_m)*2
-            
-            if self.scale > 1:
-                roi = [x,y,w,h]
-            else:
-                roi = self.cal_extra_margin([x, y, w, h])
-            rois.append(roi)
-        
-        ## applying simple moving average
-        for i in list(range(len(rois)+1))[::-4]:
-            rois[i:] = self.moving_average(rois[i:], 4).T
-            
-        buffer = []
-        for roi in rois:
-            buffer.append(list(roi))
-        return buffer
     
     def randomize_parameters(self):
         random.seed(datetime.now())

@@ -1,151 +1,82 @@
 import torch
-import torch.utils.data as data
-from torchvision.datasets import DatasetFolder
-from torchvision.datasets.folder import IMG_EXTENSIONS
+from .video_utils import VideoClips
+from torchvision.datasets.utils import list_dir
 from torchvision.datasets.folder import has_file_allowed_extension
+from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 
-import os
-import sys
-import numpy as np
-from PIL import Image
-
-from tqdm import tqdm
-from glob import glob
-
-
-def is_image_file(filename):
-    return has_file_allowed_extension(filename, IMG_EXTENSIONS)
-
-def make_dataset(dir, class_to_idx):
-    fnames, labels = [], []
-    for label in sorted(os.listdir(dir)):
-        for fname in os.listdir(os.path.join(dir, label)):
-            fnames.append(os.path.join(dir, label, fname))
-            labels.append(label)
-            
-    assert len(labels) == len(fnames)
-    print('Number of {} videos: {:d}'.format(dir, len(fnames)))
-    targets = labels_to_idx(labels)
-    return [fnames, targets]
-
-def get_framepaths(fname):
-    frames = sorted([os.path.join(fname, img) for img in os.listdir(fname)])
-    frames = [img for img in frames if is_image_file(img)]
-    return frames
-    
-def labels_to_idx(labels):
-    labels_dict = {label: i for i, label in enumerate(sorted(set(labels)))}
-    return np.array([labels_dict[label] for label in labels], dtype=int)
-
-def default_loader(frames):
-    return video_loader(frames)
-            
-def video_loader(frames):
-    """
-        #return: list of PIL Images
-        return: list of numpy array
-    """
-    video = []
-    for i, fname in enumerate(frames):
-        with open(fname, 'rb') as f:
-            img = Image.open(f)
-            img = img.convert('RGB')
-            img = np.asarray(img)
-            video.append(img)   
-    return video
+def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
+    import os
+    folders = []
+    dir = os.path.expanduser(dir)
+    if not ((extensions is None) ^ (is_valid_file is None)):
+        raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
+    if extensions is not None:
+        def is_valid_file(x):
+            return has_file_allowed_extension(x, extensions)
+    for target in sorted(class_to_idx.keys()):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+        for root, _, fnames in sorted(os.walk(d)):
+            if len(fnames) == 0:
+                continue
+            if all([is_valid_file(os.path.join(root, fname)) for fname in fnames]):
+                item = (root, class_to_idx[target])
+                folders.append(item)
+    return folders
 
 
-class VideoFolder(DatasetFolder):
-    
-    def __init__(self, root, split='train', 
-                 clip_length_in_frames=16, 
-                 frames_between_clips=1,
+class VideoDataset(VisionDataset):
+
+    def __init__(self, root, frames_per_clip, 
+                 step_between_clips=1, 
+                 frame_rate=None,
                  spatial_transform=None,
-                 temporal_transform=None,
-                 target_transform=None,
-                 preprocess=False, loader=default_loader):
-        
-        super(VideoFolder, self).__init__(root, loader, IMG_EXTENSIONS,
-                                          transform=spatial_transform,
-                                          target_transform=target_transform)
-        self.loader = loader
-        self.video_dir = os.path.join(root, 'videos')
-        self.image_dir = os.path.join(root, 'images')
-        folder = os.path.join(self.image_dir, split)
-        
-        classes, class_to_idx = self._find_classes(folder)
+                 temporal_transform=None):
+        super(VideoDataset, self).__init__(root)
+        extensions = ('',)
+        classes = list(sorted(list_dir(root)))
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
+        self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        self.samples = make_dataset(folder, class_to_idx)
-        video_list = self.samples[0]
-        self.video_clips = self._clips_for_video(video_list,
-                                                 clip_length_in_frames,
-                                                 frames_between_clips)
+        video_list = [x[0] for x in self.samples]
+        video_list = [x for x in video_list if 'reverse' not in x] ## TODO
+        self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
+        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
+        #self.transform = transform
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
-        self.target_transform = target_transform
-   
-    def _find_classes(self, dir):
-        if sys.version_info >= (3, 5):
-            # Faster and available in Python 3.5 and above
-            classes = [d.name for d in os.scandir(dir) if d.is_dir()]
-        else:
-            classes = [d for d in os.listdir(dir) if os.path.isdir(os.path.join(dir, d))]
-        classes.sort()
-        class_to_idx = {classes[i]: i for i in range(len(classes))}
-        return classes, class_to_idx
     
-    def _clips_for_video(self, video_list, size, step):
-        videos= self._get_videos(video_list)
-        video_clips=[]
-        for vidx, video in enumerate(videos):
-            clips = self._get_clips(video, size, step)
-            for cidx, clip in enumerate(clips):
-                video_clips.append((clip, vidx))
-        return video_clips
     
-    def _get_videos(self, video_paths):
-        videos = []
-        for path in video_paths:
-            frames = get_framepaths(path)
-            video = self.loader(frames)
-            videos.append(video)
-        return videos
-        
-    def _get_clips(self, video, size, step):
-        """ video: [T H W C]
-            return: [num_clips H W C size]
+    def __getitem__(self, idx):
         """
-        dim=0
-        video_t = torch.tensor(np.asarray(video)) # T HWC
-        if len(video_t) < size:
-            return video_t.unsqueeze(0)
-        video_t = video_t.unfold(dim, size, step) # N HWC T
-        video_t = video_t.permute(0, 4, 1, 2, 3)  # N T HWC
-        return video_t
-    
-    def __getitem__(self, index):
-        clip, vidx = self.video_clips[index]
-        clip = self._to_pil_image(clip)
+            video (Tensor[T, H, W, C]): the `T` video frames
+            label (int): class of the video clip
+        """
+        video, _, _, video_idx = self.video_clips.get_clip(idx)
+        video = self._to_pil_image(video)
+        label = self.samples[video_idx][1]
         
         if self.temporal_transform is not None:
-            clip = self.temporal_transform(clip)
+            video = [self.temporal_transform(img) for img in video]
         
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
-            clip = [self.spatial_transform(img) for img in clip]
-
-        target = self.samples[1][vidx]
-        clip = torch.stack(clip).transpose(0, 1) # TCHW-->CTHW
-        target = torch.tensor(target).unsqueeze(0) # () -> (1,)
-        return clip, target
+            video = [self.spatial_transform(img) for img in video]
+            
+        video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
+        label = torch.tensor(label).unsqueeze(0) # () -> (1,)
+        return video, label
     
     def _to_pil_image(self, video):
         video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
         return [F.to_pil_image(img) for img in video]
     
     def __len__(self):
-        return len(self.video_clips)
+        return self.video_clips.num_clips()
     
-    #def __getpath__(self, index):
-    #    return self.samples[0][index]
+    def _get_clip_loc(self, idx):
+        vidx, cidx = self.video_clips.get_clip_location(idx)
+        vname, label = self.samples[vidx]
+        return (vidx, cidx)
