@@ -169,17 +169,14 @@ class VideoClips(object):
         end_pts = clip_pts[-1].item()
         has_bbox = self.with_detection
         
-        
-        
         if self.cached_data[video_idx] is None:
             print("filling cache for video index: {}".format(video_idx))
             self.cached_data[video_idx]=read_video(video_path, 0, None, has_bbox)
             print("full video length: {}".format(len(self.cached_data[video_idx][0])))
-        print("video_path:{}".format(video_path))
-        print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
+#         print("video_path:{}".format(video_path))
+#         print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
         video, audio, info = read_video_as_clip(self.cached_data[video_idx], 
                                                 start_pts, end_pts, has_bbox)
-        
         if self.frame_rate is not None:
             resampling_idx = self.resampling_idxs[video_idx][clip_idx]
             if isinstance(resampling_idx, torch.Tensor):

@@ -7,13 +7,10 @@ import numpy as np
 import pandas as pd
 from glob import glob
 from PIL import Image
-    
-from torchvision.datasets.folder import has_file_allowed_extension
-from torchvision.datasets.folder import is_image_file
-from torchvision.datasets.folder import IMG_EXTENSIONS
 
 
 def get_frames(dirname):
+    from torchvision.datasets.folder import is_image_file
     return sorted([os.path.join(dirname, file) 
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
@@ -54,7 +51,9 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
         if not True: #need_preprocess:
             info['body_keypoint'] = item
         else:
+            #print("item", item)
             coords = preprocess_keypoints(dirname, item)
+            #sprint("coords", coords)
             info['body_keypoint'] = coords
     
     sample = (video, audio, info)
@@ -63,10 +62,9 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
 def read_video_as_clip(sample, start_pts, end_pts, has_bbox):
     video, audio, info = sample
     video = video[start_pts:end_pts+1]
-    keypoints = info['body_keypoint']
     
     ##TODO: slicing keypoints
-    #info['body_keypoint'] = keypoints[start_pts:end_pts+1]
+    #info['body_keypoint'] = info['body_keypoint'][start_pts:end_pts+1]
     #print(info)
     return (video, audio, info)
 
@@ -93,9 +91,9 @@ def preprocess_keypoints(dirname, item, df=target_dataframe()):
     npeople = np.array(people).shape[0]
     torso = item['torso']
     tidxs = df[df['imgpath']==fname]['targets'].values # target idx
-    
-    if len(tidxs) == 0:  
-        return [] # remove data without label
+    if len(tidxs) == 0:
+        print("{} target index not exists".format(dirname))
+        return [] 
     else: 
         tidxs = tidxs[0]
 

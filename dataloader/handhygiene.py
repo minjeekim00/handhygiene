@@ -27,8 +27,21 @@ def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     folders=[]
     for label in os.listdir(os.path.join(dir)):
         for fname in os.listdir(os.path.join(dir, label)):
+            
+            # exceptions
             if any([fname in ex for ex in exclusions]):
                 continue
+            txtfile = os.path.join(dir, label, fname, fname+'.txt')
+            if not os.path.exists(txtfile):
+                print("{} not exists".format(txtfile))
+                continue
+            from .io.video import target_dataframe
+            df = target_dataframe()
+            hastarget = len(df[df['imgpath']==fname].values)
+            if not hastarget:
+                continue
+            
+            # append item
             item = (os.path.join(dir, label, fname), class_to_idx[label])
             folders.append(item)
     return folders
@@ -70,53 +83,54 @@ class HandHygiene(VisionDataset):
 
 
     def _make_item(self, idx): 
-        video, _, _, video_idx = self.video_clips.get_clip(idx)
+        video, _, info, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
-#         video = self._to_pil_image(video)
-#         optflow = self._to_pil_image(optflow)
+        video = self._to_pil_image(video)
+        optflow = self._to_pil_image(optflow)
         label = self.samples[video_idx][1]
-        return (video, optflow, label)
+        keypoints = info['body_keypoint']
+        if keypoints is None:
+            print("idx: {} not having keypoints")
+        elif isinstance(keypoints, list) and len(keypoints) == 0:
+            print("idx: {} not having keypoints")
             
+        rois = self._get_clip_coord(idx, keypoints)
+        return (video, optflow, rois, label)
+    
     def __getitem__(self, idx):
         print("__getitem__", idx)
-        video, optflow, label = self._make_item(idx)
-#         rois = self._get_clip_coord(idx)
-
-#         if self.temporal_transform is not None:
-#             self.temporal_transform.randomize_parameters()
-#             video = self.temporal_transform(video)
-#             optflow = self.temporal_transform(optflow)
-#             rois = self.temporal_transform(rois)
-#         if self.openpose_transform is not None:
-#             self.openpose_transform.randomize_parameters()
-#             video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
-#             optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
-#             if len(video)==0:
-#                 print("windows empty")
-#         if self.spatial_transform is not None:
-#             self.spatial_transform.randomize_parameters()
-#             video = [self.spatial_transform(img) for img in video]
-#             optflow = [self.spatial_transform(img) for img in optflow]
-#         video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
-#         optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
-#         optflow = optflow[:-1,:,:,:] # 3->2 channel
-#         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
+        start = time.time()
+        video, optflow, rois, label = self._make_item(idx)
+        
+        if self.temporal_transform is not None:
+            self.temporal_transform.randomize_parameters()
+            video = self.temporal_transform(video)
+            optflow = self.temporal_transform(optflow)
+            rois = self.temporal_transform(rois)
+        if self.openpose_transform is not None:
+            self.openpose_transform.randomize_parameters()
+            video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
+            optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
+            if len(video)==0:
+                print("windows empty")
+        if self.spatial_transform is not None:
+            self.spatial_transform.randomize_parameters()
+            video = [self.spatial_transform(img) for img in video]
+            optflow = [self.spatial_transform(img) for img in optflow]
+        video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
+        optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
+        optflow = optflow[:-1,:,:,:] # 3->2 channel
+        label = torch.tensor(label).unsqueeze(0) # () -> (1,)
 
         return video, optflow, label
     
     
-    def _get_clip_loc(self, idx):
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        vname, label = self.samples[vidx]
-        return (vidx, cidx)
-    
-    def _get_clip_coord(self, idx):
+    def _get_clip_coord(self, idx, coords):
         fpc = self.frames_per_clip
         vidx, cidx = self.video_clips.get_clip_location(idx)
-        target = self.samples[vidx][2]
+        target = self.samples[vidx][1]
         step = self.step[self.classes[target]]
         start= cidx * step
-        coords = self.samples[vidx][1]
         rois = self._smoothing(coords)
         rois = rois[start:start+fpc]
         return rois
