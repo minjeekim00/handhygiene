@@ -16,7 +16,9 @@ def unfold(tensor, size, step, dilation=1):
     new_stride = (step * o_stride, dilation * o_stride)
     new_size = ((numel - (dilation * (size - 1) + 1)) // step + 1, size)
     if new_size[0] < 1:
-        new_size = (0, size)
+        #new_size = (0, size)
+        #not to exclude video shorther than size
+        return tensor.unsqueeze(0)
     return torch.as_strided(tensor, new_size, new_stride)
 
 
@@ -29,7 +31,13 @@ class VideoClips(object):
         else:
             self._init_from_metadata(_precomputed_metadata)
         self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate)
-        self.cached_data=[None for i in range(len(video_paths))]
+        self.cached_data = [None for i in range(len(video_paths))]
+        
+        ## to cache all data when initializing
+#         has_bbox = False
+#         if 'flow' not in self.video_paths[0]:
+#             has_bbox = True
+#         self.cached_data = [read_video(video_path, 0, None, has_bbox) for video_path in self.video_paths]
         self.with_detection = with_detection
 
     def _compute_frame_pts(self):
@@ -170,12 +178,7 @@ class VideoClips(object):
         has_bbox = self.with_detection
         
         if self.cached_data[video_idx] is None:
-            print("video_path:{}".format(video_path))
-            print("filling cache for video index: {}".format(video_idx))
-            self.cached_data[video_idx]=read_video(video_path, 0, None, has_bbox)
-            print("full video length: {}".format(len(self.cached_data[video_idx][0])))
-            
-#         print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
+            self.cached_data[video_idx] = read_video(video_path, 0, None, has_bbox)
         video, audio, info = read_video_as_clip(self.cached_data[video_idx], 
                                                 start_pts, end_pts, has_bbox)
         if self.frame_rate is not None:

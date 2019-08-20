@@ -71,7 +71,7 @@ class HandHygiene(VisionDataset):
                    self.classes[1]:4}
         self.video_list = [x[0] for x in self.samples]
         # TODO: use video_utils subset
-        self.optflow_list = [os.path.join(x, 'flow') for x in self.video_list]
+        self.optflow_list = [self._optflow_path(x) for x in self.video_list]
         self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate, with_detection=with_detection)
         print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
@@ -79,8 +79,20 @@ class HandHygiene(VisionDataset):
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
         self.cropped = cropped
+        print("Number of clips per class: ", self._num_clips_per_class())
         
-
+    def _num_clips_per_class(self):
+        classes = self.classes
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
+        num_clips = {cls:0 for cls in classes}
+        
+        for i in range(self.video_clips.num_clips()):
+            vidx, _ = self.video_clips.get_clip_location(i)
+            label = self.samples[vidx][1]
+            num_clips[classes[label]] += 1
+        return num_clips
+        
+        
     def _make_item(self, idx): 
         video, _, info, video_idx = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
@@ -97,7 +109,6 @@ class HandHygiene(VisionDataset):
         return (video, optflow, rois, label)
     
     def __getitem__(self, idx):
-        print("__getitem__", idx)
         video, optflow, rois, label = self._make_item(idx)
         
         if self.temporal_transform is not None:
@@ -149,27 +160,24 @@ class HandHygiene(VisionDataset):
     
     def preprocess(self, ext, useCuda=True):
         root = self.root
-        for label in os.listdir(root): 
+        for label in os.listdir(root):
             for v_name in os.listdir(os.path.join(root, label)):
-                if ext not in v_name:
-                    continue
+                ## TODO
+#                 if ext not in v_name:
+#                     continue
                 v_path = os.path.join(root, label, v_name)
                 v_output = self._optflow_path(v_path)
                 flows = cm.findOpticalFlow(v_path, v_output, useCuda, True)
-                if flows is not None:
-                    flows = np.asarray(flows)
-                    #write_video(v_output, flows, fps=15)
+            
+                ## TODO: write as a video
+#                 if flows is not None:
+#                     flows = np.asarray(flows)
+#                     write_video(v_output, flows, fps=15)
                     
     
     def _optflow_path(self, video_path):
         f_type = self._optflow_type()
-        v_dir, v_name = os.path.split(video_path)
-        f_dir = os.path.join(v_dir, f_type)
-            
-        if not os.path.exists(f_dir):
-            print("creating flow directory: {}".format(f_dir))
-            os.mkdir(f_dir)
-        f_output=os.path.join(f_dir, v_name)
+        f_output=os.path.join(video_path, f_type)
         return f_output
     
     def _optflow_type(self):

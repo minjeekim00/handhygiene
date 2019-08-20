@@ -18,8 +18,6 @@ writer = SummaryWriter(logpath)
 
 rgb_weights_path = 'model/model_rgb.pth'
 flow_weights_path = 'model/model_flow.pth'
-#rgb_weights_path = 'weights/i3d/handhygiene_i3d_rgb_epoch_99.pth'
-#flow_weights_path = 'weights/i3d/handhygiene_i3d_flow_epoch_99.pth'
 
 
 def set_param_requires_grad(model, feature_extracting, training_num):
@@ -74,21 +72,19 @@ def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=Tru
 
 
 
-def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epochs=50, start_epoch=0, flowonly=False):
+def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epochs=50, start_epoch=0):
     since = time.time()
     i3d_rgb, i3d_flow = models
     best_model_wts = {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict(),
                      'joint': {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict()}}
     best_acc = {'rgb':0.0, 'flow':0.0, 'joint':0.0}
     best_iters = {'rgb':0, 'flow':0, 'joint':0}
-    #iterations = {'train': 0, 'val': 0}
-    iterations = {'train': start_epoch*dataloaders['train'].dataset.__len__(), 
-                  'val': start_epoch*dataloaders['val'].dataset.__len__()}
+    iterations = {'train': 0, 'val': 0}
+#     iterations = {'train': start_epoch*dataloaders['train'].dataset.__len__(), 
+#                   'val': start_epoch*dataloaders['val'].dataset.__len__()}
     
-    with open(os.path.join(logpath, 'traing_logging.txt'), 'a') as log:
+    with open(os.path.join(logpath, 'training_logging.txt'), 'a') as log:
         for epoch in tqdm(range(num_epochs)[start_epoch:]):
-            if epoch == 0:
-                dataloaders[phase].dataset.set_use_cache(True)
         
             for phase in ['train', 'val']:
                 if phase == 'train':

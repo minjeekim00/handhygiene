@@ -42,7 +42,6 @@ class VideoDataset(VisionDataset):
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
         video_list = [x[0] for x in self.samples]
-        video_list = [x for x in video_list if 'reverse' not in x] ## TODO
         self.video_clips = VideoClips(video_list, frames_per_clip, step_between_clips, frame_rate)
         print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         #self.transform = transform
@@ -78,7 +77,3 @@ class VideoDataset(VisionDataset):
     def __len__(self):
         return self.video_clips.num_clips()
     
-    def _get_clip_loc(self, idx):
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        vname, label = self.samples[vidx]
-        return (vidx, cidx)
