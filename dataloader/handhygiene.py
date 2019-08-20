@@ -54,10 +54,10 @@ class HandHygiene(VisionDataset):
                  openpose_transform=None,
                  spatial_transform=None,
                  temporal_transform=None,
-                 opt_flow_preprocess=False, with_detection=True, cropped=False):
+                 opt_flow_preprocess=False, with_detection=True):
 
         super(HandHygiene, self).__init__(root)
-        extensions = ('',)
+        extensions = ('',) #tmp
         classes = list(sorted(list_dir(root)))
         class_to_idx = {classes[i]: i for i in range(len(classes))}
         
@@ -67,19 +67,32 @@ class HandHygiene(VisionDataset):
         self.samples = make_dataset(self.root, class_to_idx)
         self.classes = classes
         self.frames_per_clip = frames_per_clip
-        self.step={self.classes[0]:step_between_clips,
-                   self.classes[1]:4}
+        self.steps = self._init_steps(step_between_clips)
         self.video_list = [x[0] for x in self.samples]
         # TODO: use video_utils subset
         self.optflow_list = [self._optflow_path(x) for x in self.video_list]
-        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate, with_detection=with_detection)
-        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
-        self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
+        self.video_clips = VideoClips(self.video_list, 
+                                      frames_per_clip, 
+                                      step_between_clips, 
+                                      frame_rate, with_detection=with_detection)
+        self.optflow_clips = VideoClips(self.optflow_list, 
+                                        frames_per_clip, 
+                                        step_between_clips, 
+                                        frame_rate)
+        
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
-        self.cropped = cropped
+        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
         print("Number of clips per class: ", self._num_clips_per_class())
+        
+    def _init_steps(self, step_between_clips):
+        if isinstance(step_between_clips, dict):
+            self.steps = step_between_clips
+        else:
+            self.steps = {label:step_between_clips 
+                          for label in self.classes}
+        return self.steps
         
     def _num_clips_per_class(self):
         classes = self.classes
@@ -118,8 +131,10 @@ class HandHygiene(VisionDataset):
             rois = self.temporal_transform(rois)
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
-            video = [self.openpose_transform(v, rois, i) for i, v in enumerate(video)]
-            optflow = [self.openpose_transform(f, rois, i) for i, f in enumerate(optflow)]
+            video = [self.openpose_transform(v, rois, i) 
+                     for i, v in enumerate(video)]
+            optflow = [self.openpose_transform(f, rois, i) 
+                       for i, f in enumerate(optflow)]
             if len(video)==0:
                 print("windows empty")
         if self.spatial_transform is not None:
@@ -138,7 +153,7 @@ class HandHygiene(VisionDataset):
         fpc = self.frames_per_clip
         vidx, cidx = self.video_clips.get_clip_location(idx)
         target = self.samples[vidx][1]
-        step = self.step[self.classes[target]]
+        step = self.steps[self.classes[target]]
         start= cidx * step
         rois = self._smoothing(coords)
         rois = rois[start:start+fpc]
@@ -184,7 +199,6 @@ class HandHygiene(VisionDataset):
         ### TODO: implement reversed version
         #'reverse_flow' if reversed else 'flow'
         return 'flow'
-    
     
     def _to_pil_image(self, video):
         video = [v.permute(2, 0, 1) for v in video] # for to_pil_image

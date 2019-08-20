@@ -1,5 +1,6 @@
 ## https://github.com/pytorch/vision/blob/master/torchvision/datasets/video_utils.py
 
+import os
 import bisect
 import math
 import torch
@@ -82,7 +83,7 @@ class VideoClips(object):
             "video_pts": video_pts,
             "video_fps": video_fps
         }
-        return type(self)(video_paths, self.num_frames, self.step, self.frame_rate,
+        return type(self)(video_paths, self.num_frames, self.steps, self.frame_rate,
                           _precomputed_metadata=metadata)
 
     @staticmethod
@@ -103,7 +104,7 @@ class VideoClips(object):
             idxs = unfold(idxs, num_frames, step)
         return clips, idxs
 
-    def compute_clips(self, num_frames, step, frame_rate=None):
+    def compute_clips(self, num_frames, steps, frame_rate=None):
         """
         Compute all consecutive sequences of clips from video_pts.
         Always returns clips of size `num_frames`, meaning that the
@@ -115,21 +116,32 @@ class VideoClips(object):
                 in a clip
         """
         self.num_frames = num_frames
-        self.step = step
+        self.steps = steps
         self.frame_rate = frame_rate
         self.clips = []
         self.resampling_idxs = []
         for vidx, (video_pts, fps) in enumerate(zip(self.video_pts, self.video_fps)):
-            ##################################
-            if 'notclean' in self.video_paths[vidx]:
-                step = 4
-            ##################################
+            
+            # customize step per class
+            _, _, label, _ = self._split_path(self.video_paths[vidx])
+            step = steps[label]
+            
             clips, idxs = self.compute_clips_for_video(video_pts, num_frames, step, fps, frame_rate)
             self.clips.append(clips)
             self.resampling_idxs.append(idxs)
         clip_lengths = torch.as_tensor([len(v) for v in self.clips])
         self.cumulative_sizes = clip_lengths.cumsum(0).tolist()
 
+        
+    def _split_path(self, path):
+        if 'flow' in path: # for optical flow dir
+            path = os.path.split(path)[0]
+        
+        root, name = os.path.split(path)
+        root, label = os.path.split(root)
+        root, phase = os.path.split(root)
+        return root, phase, label, name
+        
     def __len__(self):
         return self.num_clips()
 
