@@ -15,28 +15,36 @@ def get_frames(dirname):
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
 
-def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
-    
+def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, target='', downsample=None):
     frames = get_frames(dirname)
     video = []
+        
     for i, frame in enumerate(frames):
         with open(frame, 'rb') as f:
             img = Image.open(f)
             img = img.convert('RGB')
+            
+            if downsample:
+                w, h = np.asarray(img).shape[:2]
+                ratio = min(w/downsample, h/downsample)
+                w /= ratio
+                h /= ratio
+                img.thumbnail((h, w), Image.ANTIALIAS)
+                #img.save(frame, "PNG")
             img = np.asarray(img)
             video.append(img)
-            
+
     if end_pts is None:
         end_pts = len(video)
 
     if end_pts < start_pts:
         raise ValueError("end_pts should be larger than start_pts, got "
                          "start_pts={} and end_pts={}".format(start_pts, end_pts))
-        
+    
     video = np.asarray(video)
     video = torch.tensor(video)
     audio = torch.tensor([]) #tmp
-    info = {'video_fps': 15.0,
+    info = {'video_fps': 30.0,
            'body_keypoint': None}
     
     ## when has detection box in image frame
@@ -46,17 +54,19 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False):
         with open(txtfile, 'r') as f:
             item = json.load(f)
         
-        
         ## this is to get body keypoint coordinates,
         ## otherwise skip
         if not True: #need_preprocess:
             info['body_keypoint'] = item
         else:
-            #print("item", item)
             coords = preprocess_keypoints(dirname, item)
-            #sprint("coords", coords)
             info['body_keypoint'] = coords
-    
+
+        condition = len(coords['people']) == len(frames)
+        message = "{}: frames:{}, coords:{}".format(
+            dirname, len(frames), len(coords['people']))
+        assert condition, message
+        
     sample = (video, audio, info)
     return read_video_as_clip(sample, start_pts, end_pts, has_bbox)
 

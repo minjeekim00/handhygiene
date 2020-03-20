@@ -1,11 +1,13 @@
 ## https://github.com/pytorch/vision/blob/master/torchvision/datasets/video_utils.py
 
+import os
 import bisect
 import math
 import torch
 from dataloader.io.video import read_video_timestamps
 from dataloader.io.video import read_video_as_clip
 from dataloader.io.video import read_video
+from dataloader.io.video import get_frames
 from torchvision.datasets.utils import tqdm
 
 
@@ -16,20 +18,27 @@ def unfold(tensor, size, step, dilation=1):
     new_stride = (step * o_stride, dilation * o_stride)
     new_size = ((numel - (dilation * (size - 1) + 1)) // step + 1, size)
     if new_size[0] < 1:
-        new_size = (0, size)
+        #new_size = (0, size)
+        #not to exclude video shorther than size
+        return tensor.unsqueeze(0)
     return torch.as_strided(tensor, new_size, new_stride)
 
 
 class VideoClips(object):
     def __init__(self, video_paths, clip_length_in_frames=16, frames_between_clips=1,
-                 frame_rate=None, _precomputed_metadata=None, with_detection=False):
+                 frame_rate=None, _precomputed_metadata=None, with_detection=False,
+                 downsample=None):
         self.video_paths = video_paths
         if _precomputed_metadata is None:
             self._compute_frame_pts()
         else:
             self._init_from_metadata(_precomputed_metadata)
         self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate)
-        self.cached_data=[None for i in range(len(video_paths))]
+        
+        self.downsample = downsample
+
+        self.shared_manager = None
+        self.shared_data = [None for video_path in self.video_paths]
         self.with_detection = with_detection
 
     def _compute_frame_pts(self):
@@ -74,7 +83,7 @@ class VideoClips(object):
             "video_pts": video_pts,
             "video_fps": video_fps
         }
-        return type(self)(video_paths, self.num_frames, self.step, self.frame_rate,
+        return type(self)(video_paths, self.num_frames, self.steps, self.frame_rate,
                           _precomputed_metadata=metadata)
 
     @staticmethod
@@ -95,7 +104,7 @@ class VideoClips(object):
             idxs = unfold(idxs, num_frames, step)
         return clips, idxs
 
-    def compute_clips(self, num_frames, step, frame_rate=None):
+    def compute_clips(self, num_frames, steps, frame_rate=None):
         """
         Compute all consecutive sequences of clips from video_pts.
         Always returns clips of size `num_frames`, meaning that the
@@ -107,21 +116,34 @@ class VideoClips(object):
                 in a clip
         """
         self.num_frames = num_frames
-        self.step = step
+        self.steps = steps
         self.frame_rate = frame_rate
         self.clips = []
         self.resampling_idxs = []
         for vidx, (video_pts, fps) in enumerate(zip(self.video_pts, self.video_fps)):
-            ##################################
-            if 'notclean' in self.video_paths[vidx]:
-                step = 4
-            ##################################
+            
+            # customize step per class
+            _, _, label, name = self._split_path(self.video_paths[vidx])
+            step = steps[label]
+            if name.startswith('38_'): # tmp
+                step = 1
+            
             clips, idxs = self.compute_clips_for_video(video_pts, num_frames, step, fps, frame_rate)
             self.clips.append(clips)
             self.resampling_idxs.append(idxs)
         clip_lengths = torch.as_tensor([len(v) for v in self.clips])
         self.cumulative_sizes = clip_lengths.cumsum(0).tolist()
 
+        
+    def _split_path(self, path):
+        if 'flow' in path: # for optical flow dir
+            path = os.path.split(path)[0]
+        
+        root, name = os.path.split(path)
+        root, label = os.path.split(root)
+        root, phase = os.path.split(root)
+        return root, phase, label, name
+        
     def __len__(self):
         return self.num_clips()
 
@@ -133,6 +155,12 @@ class VideoClips(object):
         Number of subclips that are available in the video list.
         """
         return self.cumulative_sizes[-1]
+    
+    def num_total_frames(self):
+        return sum([len(get_frames(path)) for path in self.video_paths])
+    
+    def num_image_frames(self, path):
+        return len(get_frames(path))
 
     def get_clip_location(self, idx):
         """
@@ -158,6 +186,20 @@ class VideoClips(object):
         idxs = idxs.floor().to(torch.int64)
         return idxs
 
+    def cache_video(self, video_idx, video):
+        """ cache video """
+        self.shared_data[video_idx] = video
+
+    def get_video(self, video_idx):
+        """ get video from shared data """
+        video_path = self.video_paths[video_idx]
+        
+        if self.shared_data[video_idx] is None:
+            video = read_video(video_path, 0, None, self.with_detection, self.downsample)
+            self.cache_video(video_idx, video)
+                
+        return self.shared_data[video_idx]
+    
     def get_clip(self, idx):
         if idx >= self.num_clips():
             raise IndexError("Index {} out of range "
@@ -167,17 +209,11 @@ class VideoClips(object):
         clip_pts = self.clips[video_idx][clip_idx]
         start_pts = clip_pts[0].item()
         end_pts = clip_pts[-1].item()
-        has_bbox = self.with_detection
         
-        if self.cached_data[video_idx] is None:
-            print("video_path:{}".format(video_path))
-            print("filling cache for video index: {}".format(video_idx))
-            self.cached_data[video_idx]=read_video(video_path, 0, None, has_bbox)
-            print("full video length: {}".format(len(self.cached_data[video_idx][0])))
-            
-#         print("video_idx:{} , slicing[{}:{}]".format(video_idx, start_pts, end_pts+1))
-        video, audio, info = read_video_as_clip(self.cached_data[video_idx], 
-                                                start_pts, end_pts, has_bbox)
+        video_raw = self.get_video(video_idx)
+                
+#         print("video_utils, shared data: {} ".format([data[0].size() if data is not None else None for data in self.shared_data]))
+        video, audio, info = read_video_as_clip(video_raw, start_pts, end_pts, self.with_detection)
         if self.frame_rate is not None:
             resampling_idx = self.resampling_idxs[video_idx][clip_idx]
             if isinstance(resampling_idx, torch.Tensor):
@@ -187,3 +223,11 @@ class VideoClips(object):
         #if len(video) < self.num_frames:
         #    print("{} x {}".format(video.shape, self.num_frames))
         return video, audio, info, video_idx
+
+    def cache_all(self):
+        self.shared_data = [self.get_video(video_idx) for video_idx 
+                            in tqdm(range(len(self.video_paths)))]
+    
+    def set_shared_manager(self, manager):
+        self.shared_manager = manager
+        self.shared_data = manager.list([None for video_path in self.video_paths])
