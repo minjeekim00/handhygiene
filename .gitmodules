@@ -1,3 +1,6 @@
 [submodule "utils/python-opencv-cuda"]
 	path = utils/python-opencv-cuda
 	url = https://github.com/minjeekim00/python-opencv-cuda.git
+[submodule "src/openpose"]
+	path = src/openpose
+	url = https://github.com/CMU-Perceptual-Computing-Lab/openpose.git
