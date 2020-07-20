@@ -3,13 +3,21 @@ import math
 import logging 
 from datetime import datetime
 
+random.seed(100)
+
 class LoopPadding(object):
     
-    def __init__(self, size):
+    def __init__(self, size, num=None):
+        
         self.size = size
+        self.size_crop = num
+        if num is not None:
+            assert isinstance(num, int)
+            self.size_crop = int(self.size/num)
 
     def __call__(self, video):
-        #video = self.__sizecheck__(video)
+#         print("LoopPadding")
+        video = self.__sizecheck__(video)
         video = self.loop(video)
         return video
     
@@ -21,11 +29,14 @@ class LoopPadding(object):
         return video
     
     def __sizecheck__(self, video):
-        if len(video) >= self.size:
+        """ Random choice among ["TemporalBeginCrop", "TemporalRandomCrop", "TemporalCenterCrop"]
+        """
+        size = self.size if self.size_crop is None else self.size_crop
+        if len(video) >= size:
             transforms = TemporalRandomChoice([
-                TemporalBeginCrop(self.size),
-                TemporalRandomCrop(self.size),
-                TemporalCenterCrop(self.size)])
+                TemporalBeginCrop(size),
+                TemporalRandomCrop(size),
+                TemporalCenterCrop(size)])
             video = transforms(video)
         return video
     
@@ -34,11 +45,12 @@ class LoopPadding(object):
 
 class MirrorPadding(LoopPadding):
     
-    def __init__(self, size):
-        super(MirrorPadding, self).__init__(size)
-        self.size = size
+    def __init__(self, size, num=None):
+        super(MirrorPadding, self).__init__(size, num)
 
     def __call__(self, video):
+#         print("MirrorPadding")
+        video = self.__sizecheck__(video)
         video = video[::-1]
         video = self.loop(video)
         return video
@@ -46,15 +58,17 @@ class MirrorPadding(LoopPadding):
     
 class MirrorLoopPadding(LoopPadding):
     
-    def __init__(self, size):
-        super(MirrorLoopPadding, self).__init__(size)
-        self.size = size
+    def __init__(self, size, num=None):
+        super(MirrorLoopPadding, self).__init__(size, num)
 
     def __call__(self, video):
+#         print("MirrorLoopPadding")
+        video = self.__sizecheck__(video)
         for i in range(100):
             video += self.__getmirror__(video, i)
             
             if len(video) >= self.size:
+#                 print(self.size)
                 video = video[:self.size]
                 break
         return video
@@ -76,6 +90,7 @@ class TemporalBeginCrop(object):
         self.size = size
 
     def __call__(self, video):
+#         print("TemporalBeginCrop")
         return video[:self.size]
     
     def randomize_parameters(self):
@@ -101,7 +116,7 @@ class TemporalCenterCrop(object):
         Returns:
             list: Cropped frame indices.
         """
-        
+#         print("TemporalCenterCrop")
         center_index = len(video) // 2
         begin_index = max(0, center_index - (self.size // 2))
         end_index = min(begin_index + self.size, len(video))
@@ -132,13 +147,19 @@ class TemporalRandomCrop(object):
         Returns:
             list: Cropped frame indices.
         """
-
-        #print("random cropping ...")
+        video = self.__sizecheck__(video)
         rand_end = max(0, len(video) - self.size - 1)
         begin_index = random.randint(0, rand_end)
         end_index = min(begin_index + self.size, len(video))
 
         video = video[int(begin_index):int(end_index)]
+        return video
+    
+    def __sizecheck__(self, video):
+        """ Random choice among ["TemporalBeginCrop", "TemporalRandomCrop", "TemporalCenterCrop"]"""
+        if len(video) < self.size:
+            transforms = LoopPadding(self.size)
+            video = transforms(video)
         return video
     
     def randomize_parameters(self):
@@ -168,7 +189,7 @@ class RandomTransforms(object):
         return format_string
     
     def randomize_parameters(self):
-        self.seed = datetime.now()
+        self.seed = random.random()
     
     
 class TemporalRandomApply(RandomTransforms):
@@ -205,7 +226,6 @@ class TemporalRandomChoice(RandomTransforms):
     """
  
     def __call__(self, video):
-        random.seed(self.seed)
         t = random.choice(self.transforms)
         #print(str(t))
         #logging.info(str(t))

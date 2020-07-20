@@ -38,9 +38,11 @@ class I3DDataset(VisionDataset):
     def __init__(self, root, frames_per_clip, 
                  step_between_clips=1,
                  frame_rate=None,
+                 downsample=None,
                  spatial_transform=None,
                  temporal_transform=None,
                  opt_flow_preprocess=False):
+        
         super(I3DDataset, self).__init__(root)
         extensions = ('',)
         classes = list(sorted(list_dir(root)))
@@ -51,11 +53,21 @@ class I3DDataset(VisionDataset):
             
         self.samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file=None)
         self.classes = classes
-        self.video_list = [x[0] for x in self.samples if 'flow' not in x[0]]
-        self.optflow_list = [x[0] for x in self.samples if '/flow' in x[0]]
-        self.video_clips = VideoClips(self.video_list, frames_per_clip, step_between_clips, frame_rate)
-        print('Number of {} video clips: {:d}'.format(root, self.video_clips.num_clips()))
-        self.optflow_clips = VideoClips(self.optflow_list, frames_per_clip, step_between_clips, frame_rate)
+        
+        # TODO: use video_utils subset
+        self.optflow_list = [os.path.join(x, 'flow') for x in self.video_list]
+        
+        self.video_clips = VideoClips(self.video_list, 
+                                      frames_per_clip, 
+                                      step_between_clips, 
+                                      frame_rate,
+                                      downsample_size=downsample)
+        
+        self.optflow_clips = VideoClips(self.optflow_list, 
+                                        frames_per_clip, 
+                                        step_between_clips, 
+                                        frame_rate)
+        
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         if opt_flow_preprocess:
@@ -100,18 +112,6 @@ class I3DDataset(VisionDataset):
         optflow = optflow[:-1,:,:,:] # 3->2 channel
         label = torch.tensor(label).unsqueeze(0) # () -> (1,)
         return video, optflow, label
-    
-    def _to_pil_image(self, video):
-        video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
-        return [F.to_pil_image(img) for img in video]
-        
-    def __len__(self):
-        return self.video_clips.num_clips()
-    
-    def _get_clip_loc(self, idx):
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        vname, label = self.samples[vidx]
-        return (vidx, cidx)
     
     def preprocess(self, ext, useCuda=True):
         root = self.root

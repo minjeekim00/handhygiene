@@ -166,8 +166,8 @@ def calc_roi(windows):
         rois.append(roi)
         
     ## applying simple moving average
-    #for i in list(range(len(rois)+1))[::-4]:
-    #    rois[i:] = moving_average(rois[i:], 4).T
+    for i in list(range(len(rois)+1))[::-4]:
+        rois[i:] = moving_average(rois[i:], 4).T
     rois = moving_average(rois, 4).T
             
     buffer = []

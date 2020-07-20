@@ -8,13 +8,13 @@ import numpy as np
 import torch
 import cv2
 
-from datetime import datetime
 from PIL import Image, ImageOps, ImageEnhance, PILLOW_VERSION
 try:
     import accimage
 except ImportError:
     accimage = None
 
+random.seed(100)
 
 class Compose(object):
     """Composes several transforms together.
@@ -36,10 +36,101 @@ class Compose(object):
         return img
 
     def randomize_parameters(self):
-        random.seed(datetime.now())
         for t in self.transforms:
             t.randomize_parameters()
 
+            
+class ToPILImage(object):
+    """Convert a tensor or an ndarray to PIL Image."""
+
+    def __init__(self, mode=None):
+        self.mode = mode
+
+    def __call__(self, pic):
+        """
+        Args:
+            pic (Tensor or numpy.ndarray): Image to be converted to PIL Image.
+
+        Returns:
+            PIL Image: Image converted to PIL Image.
+
+        """
+        
+        if not(isinstance(pic, torch.Tensor) or isinstance(pic, np.ndarray)):
+            raise TypeError('pic should be Tensor or ndarray. Got {}.'.format(type(pic)))
+
+        elif isinstance(pic, torch.Tensor):
+            if pic.ndimension() not in {2, 3}:
+                raise ValueError('pic should be 2/3 dimensional. Got {} dimensions.'.format(pic.ndimension()))
+
+            elif pic.ndimension() == 2:
+                # if 2D image, add channel dimension (CHW)
+                pic = pic.unsqueeze(0)
+
+        elif isinstance(pic, np.ndarray):
+            if pic.ndim not in {2, 3}:
+                raise ValueError('pic should be 2/3 dimensional. Got {} dimensions.'.format(pic.ndim))
+
+            elif pic.ndim == 2:
+                # if 2D image, add channel dimension (HWC)
+                pic = np.expand_dims(pic, 2)
+
+        npimg = pic
+        if isinstance(pic, torch.FloatTensor) and self.mode != 'F':
+            pic = pic.mul(255).byte()
+        if isinstance(pic, torch.Tensor):
+            npimg = np.transpose(pic.numpy(), (1, 2, 0))
+
+        if not isinstance(npimg, np.ndarray):
+            raise TypeError('Input pic must be a torch.Tensor or NumPy ndarray, ' +
+                            'not {}'.format(type(npimg)))
+
+        if npimg.shape[2] == 1:
+            expected_mode = None
+            npimg = npimg[:, :, 0]
+            if npimg.dtype == np.uint8:
+                expected_mode = 'L'
+            elif npimg.dtype == np.int16:
+                expected_mode = 'I;16'
+            elif npimg.dtype == np.int32:
+                expected_mode = 'I'
+            elif npimg.dtype == np.float32:
+                expected_mode = 'F'
+            if self.mode is not None and self.mode != expected_mode:
+                raise ValueError("Incorrect mode ({}) supplied for input type {}. Should be {}"
+                                 .format(self.mode, np.dtype, expected_mode))
+            self.mode = expected_mode
+
+        elif npimg.shape[2] == 2:
+            permitted_2_channel_modes = ['LA']
+            if self.mode is not None and self.mode not in permitted_2_channel_modes:
+                raise ValueError("Only modes {} are supported for 2D inputs".format(permitted_2_channel_modes))
+
+            if self.mode is None and npimg.dtype == np.uint8:
+                self.mode = 'LA'
+
+        elif npimg.shape[2] == 4:
+            permitted_4_channel_modes = ['RGBA', 'CMYK', 'RGBX']
+            if self.mode is not None and self.mode not in permitted_4_channel_modes:
+                raise ValueError("Only modes {} are supported for 4D inputs".format(permitted_4_channel_modes))
+
+            if self.mode is None and npimg.dtype == np.uint8:
+                self.mode = 'RGBA'
+        else:
+            permitted_3_channel_modes = ['RGB', 'YCbCr', 'HSV']
+            if self.mode is not None and self.mode not in permitted_3_channel_modes:
+                raise ValueError("Only modes {} are supported for 3D inputs".format(permitted_3_channel_modes))
+            if self.mode is None and npimg.dtype == np.uint8:
+                self.mode = 'RGB'
+
+        if self.mode is None:
+            raise TypeError('Input type {} is not supported'.format(npimg.dtype))
+
+        return Image.fromarray(npimg, mode=self.mode)
+
+    def randomize_parameters(self):
+        pass
+    
 
 class ToTensor(object):
     """Convert a ``PIL.Image`` or ``numpy.ndarray`` to tensor.
@@ -250,11 +341,9 @@ class CornerCrop(object):
         return img
 
     def randomize_parameters(self):
-        random.seed(datetime.now())
         if self.randomize:
             self.crop_position = self.crop_positions[random.randint(
-                0,
-                len(self.crop_positions) - 1)]
+                0, len(self.crop_positions) - 1)]
 
 
 class RandomHorizontalFlip(object):
@@ -271,7 +360,6 @@ class RandomHorizontalFlip(object):
         return img
 
     def randomize_parameters(self):
-        random.seed(datetime.now())
         self.p = random.random()
         
         
@@ -339,11 +427,9 @@ class MultiScaleCornerCrop(object):
         return img.resize((self.size, self.size), self.interpolation)
 
     def randomize_parameters(self):
-        random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
         self.crop_position = self.crop_positions[random.randint(
-            0,
-            len(self.crop_positions) - 1)]
+            0, len(self.crop_positions) - 1)]
 
 
 class MultiScaleRandomCrop(object):
@@ -370,7 +456,6 @@ class MultiScaleRandomCrop(object):
         return img.resize((self.size, self.size), self.interpolation)
 
     def randomize_parameters(self):
-        random.seed(datetime.now())
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
         self.tl_x = random.random()
         self.tl_y = random.random()
@@ -417,8 +502,7 @@ class ColorJitter(object):
         return value
 
     @staticmethod
-    def get_params(brightness, contrast, saturation, hue, seed):
-        random.seed(seed)
+    def get_params(brightness, contrast, saturation, hue):
         transforms = []
         
         if brightness is not None:
@@ -444,12 +528,11 @@ class ColorJitter(object):
 
     def __call__(self, img):
         transform = self.get_params(self.brightness, self.contrast,
-                                    self.saturation, self.hue, self.seed)
+                                    self.saturation, self.hue)
         return transform(img)
     
     def randomize_parameters(self):
-        random.seed(datetime.now())
-        self.seed = int(random.random()*1000)
+        self.seed = random.random()
     
     
 class RandomRotation(object):
@@ -469,18 +552,16 @@ class RandomRotation(object):
         self.center = center
 
     @staticmethod
-    def get_params(degrees, seed):
-        random.seed(seed)
+    def get_params(degrees):
         angle = random.uniform(degrees[0], degrees[1])
         return angle
 
     def __call__(self, img):
-        angle = self.get_params(self.degrees, self.seed)
+        angle = self.get_params(self.degrees)
         return img.rotate(angle, self.resample, self.expand, self.center)
     
     def randomize_parameters(self):
-        random.seed(datetime.now())
-        self.seed = int(random.random()*1000)
+        self.seed = random.random()
       
     
     
@@ -529,12 +610,11 @@ class RandomAffine(object):
         self.fillcolor = fillcolor
 
     @staticmethod
-    def get_params(degrees, translate, scale_ranges, shears, img_size, seed):
+    def get_params(degrees, translate, scale_ranges, shears, img_size):
         """Get parameters for affine transformation
         Returns:
             sequence: params to be passed to the affine transformation
         """
-        random.seed(seed)
         angle = random.uniform(degrees[0], degrees[1])
         if translate is not None:
             max_dx = translate[0] * img_size[0]
@@ -557,7 +637,7 @@ class RandomAffine(object):
         return angle, translations, scale, shear
 
     def __call__(self, img):
-        angle, translate, scale, shear = self.get_params(self.degrees, self.translate, self.scale, self.shear, img.size, self.seed)
+        angle, translate, scale, shear = self.get_params(self.degrees, self.translate, self.scale, self.shear, img.sized)
         output_size = img.size
         center = (img.size[0] * 0.5 + 0.5, img.size[1] * 0.5 + 0.5)
         matrix = self._get_inverse_affine_matrix(center, angle, translate, scale, shear)
@@ -588,8 +668,7 @@ class RandomAffine(object):
         return matrix
     
     def randomize_parameters(self):
-        random.seed(datetime.now())
-        self.seed = int(random.random()*1000)
+        self.seed = random.random()
         
         
     
