@@ -1,0 +1,4 @@
+rubbing_hands
+touching_equipment
+wearing_gloves
+other_action
