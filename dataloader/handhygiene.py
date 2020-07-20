@@ -7,6 +7,7 @@ from torchvision.io.video import write_video
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 from .video_utils import VideoClips
+
 import os
 import numpy as np
 import pandas as pd
@@ -58,7 +59,6 @@ class HandHygiene(VisionDataset):
         
         # TODO: use video_utils subset
         self.optflow_list = [self._optflow_path(x) for x in self.video_list]
-        
         self.video_clips = VideoClips(self.video_list, 
                                       frames_per_clip, 
                                       step_between_clips, 
@@ -116,7 +116,7 @@ class HandHygiene(VisionDataset):
             
         _, _, info, video_idx = self.video_clips.get_clip(idx)
         assert len(rois) == 16, print(self.video_list[video_idx], rois)
-        
+
         if self.openpose_transform is not None:
             self.openpose_transform.randomize_parameters()
             video = [self.openpose_transform(v, rois, i) 
@@ -125,7 +125,6 @@ class HandHygiene(VisionDataset):
                        for i, f in enumerate(optflow)]
             if len(video)==0:
                 print("windows empty")
-                
                 
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
@@ -332,4 +331,3 @@ class HandHygiene(VisionDataset):
         
     def __len__(self):
         return self.video_clips.num_clips()
-    

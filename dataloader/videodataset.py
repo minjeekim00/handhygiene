@@ -5,6 +5,7 @@ from torchvision.datasets.folder import has_file_allowed_extension
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 
+
 def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     """
     Arguments:
@@ -34,7 +35,7 @@ def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
 
 
 class VideoDataset(VisionDataset):
-
+    
     def __init__(self, root, frames_per_clip, 
                  step_between_clips=1, 
                  frame_rate=None,
@@ -69,6 +70,7 @@ class VideoDataset(VisionDataset):
             root, self.video_clips.num_clips(), self.video_clips.num_total_frames()))
         print("Number of clips per class: ", self._num_clips_per_class())
         print("Number of frames per class: ", self._num_frames_per_class())
+
     
     def _init_steps(self, step_between_clips):
         if isinstance(step_between_clips, dict):
@@ -135,7 +137,7 @@ class VideoDataset(VisionDataset):
         
         return video, label
     
-    def _get_clip_loc(self, idx):
+     def _get_clip_loc(self, idx):
         vidx, cidx = self.video_clips.get_clip_location(idx)
         vname, label = self.samples[vidx]
         return (vidx, cidx)
@@ -143,7 +145,6 @@ class VideoDataset(VisionDataset):
     def _to_pil_image(self, video):
         video = [v.permute(2, 0, 1) for v in video] # for to_pil_image
         return [F.to_pil_image(img) for img in video]
-    
+        
     def __len__(self):
         return self.video_clips.num_clips()
-    

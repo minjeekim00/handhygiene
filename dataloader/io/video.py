@@ -149,7 +149,7 @@ def _get_bbox_info(image_path, df=target_dataframe()):
         box_dict[person_id] = [[x1, y1, x2, y2], label]
     return box_dict
 
-######################################################################################################
+################################################################################
 
 
 def _get_action_name(fname, person_id, df=target_dataframe()):

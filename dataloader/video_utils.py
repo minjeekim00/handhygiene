@@ -254,7 +254,6 @@ class VideoClips(object):
             info["video_fps"] = self.frame_rate
         #if len(video) < self.num_frames:
         #    print("{} x {}".format(video.shape, self.num_frames))
-        
         info['target_id'] = person_idx
         info['label']= label
         return video, audio, info, video_idx

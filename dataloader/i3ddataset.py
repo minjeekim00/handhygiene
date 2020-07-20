@@ -13,6 +13,7 @@ sys.path.append('./utils/python-opencv-cuda/python')
 import common as cm
 import numpy as np
 
+
 def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     import os
     folders = []
