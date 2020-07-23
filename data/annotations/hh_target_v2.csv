@@ -83,12 +83,7 @@ video_id,clip_name,action_name,person_id,occlusion
 41,41_20190211_frames014784,wearing_gloves,0,0
 40,40_20190208_frames046403,rubbing_hands,3,1
 40,40_20190208_frames030763,wearing_gloves,1,0
-40,40_20190208_frames026493,rubbing_hands,1,1
-40,40_20190208_frames026493,touching_equipment,0,0
-40,40_20190208_frames012549,rubbing_hands,0,1
 40,40_20190208_frames011317,wearing_gloves,1,1
-38,38_20190119_frames006793,rubbing_hands,2,0
-38,38_20190119_frames006793,rubbing_hands,5,0
 38,38_20190119_frames006768,rubbing_hands,5,0
 38,38_20190119_frames006673,rubbing_hands,5,0
 38,38_20190119_frames006587,rubbing_hands,6,0
@@ -110,9 +105,7 @@ video_id,clip_name,action_name,person_id,occlusion
 38,38_20190119_frames005507,rubbing_hands,1,1
 38,38_20190119_frames005480,rubbing_hands,0,0
 38,38_20190119_frames005480,rubbing_hands,3,0
-38,38_20190119_frames005480,rubbing_hands,4,0
 38,38_20190119_frames005327,rubbing_hands,3,1
-38,38_20190119_frames005327,rubbing_hands,4,0
 38,38_20190119_frames004758,rubbing_hands,1,0
 38,38_20190119_frames004758,touching_equipment,0,1
 38,38_20190119_frames004411,rubbing_hands,1,0

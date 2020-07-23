@@ -9,7 +9,8 @@ from dataloader.io.video import read_video_as_clip
 from dataloader.io.video import read_video
 from dataloader.io.video import get_frames
 from dataloader.io.video import _get_bbox_info
-from torchvision.datasets.utils import tqdm
+#from torchvision.datasets.utils import tqdm
+from tqdm import tqdm
 
 
 def unfold(tensor, size, step, dilation=1):
@@ -28,13 +29,15 @@ def unfold(tensor, size, step, dilation=1):
 class VideoClips(object):
     def __init__(self, video_paths, clip_length_in_frames=16, frames_between_clips=1,
                  frame_rate=None, _precomputed_metadata=None, with_detection=False,
-                  downsample_size=None):
+                  downsample_size=None, annotation=None, target_classes=None):
         self.video_paths = video_paths
+        self.annotation = annotation
+        self.target_classes = target_classes
         if _precomputed_metadata is None:
             self._compute_frame_pts()
         else:
             self._init_from_metadata(_precomputed_metadata)
-        self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate)
+        self.compute_clips(clip_length_in_frames, frames_between_clips, frame_rate, self.target_classes)
         
         self.downsample_size = downsample_size
 
@@ -105,7 +108,7 @@ class VideoClips(object):
             idxs = unfold(idxs, num_frames, step)
         return clips, idxs
 
-    def compute_clips(self, num_frames, steps, frame_rate=None):
+    def compute_clips(self, num_frames, steps, frame_rate=None, target_classes=[]):
         """
         Compute all consecutive sequences of clips from video_pts.
         Always returns clips of size `num_frames`, meaning that the
@@ -129,7 +132,7 @@ class VideoClips(object):
                 # TODO
                 frame = get_frames(self.video_paths[vidx])[0]
                 image_path = os.path.splitext(os.path.basename(frame))[0]
-                bbox = _get_bbox_info(image_path)
+                bbox = _get_bbox_info(image_path, self.annotation, target_classes)
                 
                 for i, (k, v )in enumerate(bbox.items()):
                     label = v[1]
@@ -224,7 +227,7 @@ class VideoClips(object):
         video_path = self.video_paths[video_idx]
         
         if self.shared_data[video_idx] is None:
-            video = read_video(video_path, 0, None, self.with_detection, self.downsample_size)
+            video = read_video(video_path, 0, None, self.with_detection, self.downsample_size, self.annotation)
             self.cache_video(video_idx, video)
                 
         return self.shared_data[video_idx]

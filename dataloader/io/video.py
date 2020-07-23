@@ -15,7 +15,7 @@ def get_frames(dirname):
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
 
-def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=None):
+def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=None, annotation=None):
     frames = get_frames(dirname)
     video = []
     
@@ -26,8 +26,8 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=No
             img = Image.open(f)
             img = img.convert('RGB')
             
+            w, h = np.asarray(img).shape[:2]
             if downsample:
-                w, h = np.asarray(img).shape[:2]
                 ratio = min(w/downsample, h/downsample)
                 w /= ratio
                 h /= ratio
@@ -46,7 +46,8 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=No
     video = np.asarray(video)
     video = torch.tensor(video)
     audio = torch.tensor([]) #tmp
-    info = {'width': w,
+    info = {'clip': dirname,
+            'width': w,
             'height': h,
             'video_fps': 15.0,
            'keypoints': None,
@@ -93,7 +94,7 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=No
     if has_bbox:
         for frame in frames:
             image_path = os.path.splitext(os.path.basename(frame))[0]
-            bboxes = _get_bbox_info(image_path)
+            bboxes = _get_bbox_info(image_path, annotation)
             info['annotations'].append(bboxes)
 
     #info['annotations'] = _get_completed_annotations(info['annotations'])
@@ -101,7 +102,7 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=No
     return read_video_as_clip(sample, start_pts, end_pts, has_bbox)
 
     
-def target_dataframe(path='./data/annotations/hh_target.csv'):
+def target_dataframe(path):
     import pandas as pd
     df = pd.read_csv(path)
     df = df[df['person_id'].notnull()] # target 있는 imgpath만 선별
@@ -136,24 +137,33 @@ def read_video_timestamps(dirname):
     return (list(range(len(frames)*1)), 15.0)
 
 
-def _get_bbox_info(image_path, df=target_dataframe()):
+def _get_bbox_info(image_path, annotation, target_actions=[]):
+    """ Get all bboxes and actions in an image path """
+    df = annotation
     
     if 'flow' in image_path:
         image_path = image_path.replace('_flow', '')
+        
     rows = df[df['image_path']==image_path]
     assert len(rows) > 0, image_path
     
     box_dict = {}
     for row in rows.values:
         _, _, label, person_id, x1, y1, x2, y2 = row
+        
+        if len(target_actions) > 0:
+            if label not in target_actions:
+                continue
         box_dict[person_id] = [[x1, y1, x2, y2], label]
     return box_dict
 
 ################################################################################
 
 
-def _get_action_name(fname, person_id, df=target_dataframe()):
+def _get_action_name(fname, person_id, annotation):
     """ return action label from data frame """
+    
+    df = annotation
     row = df[(df['clip_name'] == fname) & (df['person_id'] == person_id)]
     assert len(row) <= 1, "There is(are) {} labels on person {} in {}".format(len(row), person_id, fname)
     
@@ -167,7 +177,7 @@ def _get_action_name(fname, person_id, df=target_dataframe()):
         return 'other_action'
     
     
-def _get_bounding_box(fname, jsonfile, bbox_type='labelme'):
+def _get_bounding_box(fname, jsonfile, annotation, bbox_type='labelme'):
     ''' feeding action label here '''
     
     import json
@@ -184,7 +194,7 @@ def _get_bounding_box(fname, jsonfile, bbox_type='labelme'):
                 bbox = list(np.array(person['points']).reshape((4)))
 
                 if person_id not in bboxes:
-                    label = _get_action_name(fname, person_id)
+                    label = _get_action_name(fname, person_id, annotation)
                     bboxes[person_id] = [bbox, label]
     #TODO: else
     return bboxes
