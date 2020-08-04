@@ -9,12 +9,11 @@ from model.i3dpt import I3D, Unit3Dpy
 
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-import multiprocessing
+
 
 import logging
 
 model_name = 'i3d'
-#logpath = os.path.join('./logs/', model_name)
 logpath = os.path.join('./weights/', model_name, time.strftime("%Y%m%d"))
 pathlib.Path(logpath).mkdir(parents=True, exist_ok=True)
 writer = SummaryWriter(logpath)
@@ -107,8 +106,7 @@ def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=Tru
     return i3d_rgb, i3d_flow
 
 
-
-def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epochs=50, start_epoch=0):
+def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, start_epoch=0, manager=None):
     
     since = time.time()
     i3d_rgb, i3d_flow = models
@@ -116,7 +114,6 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                      'joint': {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict()}}
     best_acc = {'rgb':0.0, 'flow':0.0, 'joint':0.0}
     best_iters = {'rgb':0, 'flow':0, 'joint':0}
-#     iterations = {'train': 0, 'val': 0}
     iterations = {'train': start_epoch*dataloaders['train'].dataset.__len__(), 
                   'val': start_epoch*dataloaders['val'].dataset.__len__()}
     
@@ -125,15 +122,15 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
 
         for phase in ['train', 'val']:
             if epoch == start_epoch:
-                # dataloaders[phase].dataset.video_clips.cache_all()
-                dataloaders[phase].dataset.video_clips.set_shared_manager(multiprocessing.Manager())
-                manager = dataloaders[phase].dataset.video_clips.shared_manager
-                dataloaders[phase].dataset.optflow_clips.set_shared_manager(manager)
+                
+                if manager is not None:
+                    #dataloaders[phase].dataset.video_clips.cache_all()
+                    dataloaders[phase].dataset.video_clips.set_shared_manager(manager)
+                    dataloaders[phase].dataset.optflow_clips.set_shared_manager(manager)
+                    dataloaders[phase].dataset.video_clips.cache_video_all()
+                    dataloaders[phase].dataset.optflow_clips.cache_video_all()
                 
             if phase == 'train':
-                # if pytorch version < 1.1.0
-                #scheduler['rgb'].step()
-                #scheduler['flow'].step()
                 i3d_rgb.train()
                 i3d_flow.train()
             else:
@@ -148,26 +145,26 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
             classes = dataloaders[phase].dataset.classes
             total_num = sum([num_per_class[key] for key in num_per_class])
             #weight_per_class = {cls: 1-(num_per_class[cls]/total_num) for cls in classes}
-            #weight_per_class = torch.tensor([weight_per_class[cls] for cls in classes]).to(device)
+            #weight_per_class = torch.tensor([weight_per_class[cls] for cls in classes]).cuda()
             
-#             weight_per_class = torch.tensor([0.2, 0.2, 0.6]).to(device)
+            weight_per_class = torch.tensor([1.25, 1.0, 1.0]).cuda()
             
             for i, (samples) in enumerate(dataloaders[phase]):
                 iterations[phase] += 1
                 rgbs = samples[0] #BCDHW
                 flows = samples[1]
-                targets = Variable(samples[2].to(device)) #.float()
+                targets = Variable(samples[2].cuda()) #.float()
 
                 ''' rgb model '''
                 optimizer['rgb'].zero_grad()
-                rgbs = Variable(rgbs.to(device))
+                rgbs = Variable(rgbs.cuda())
                 rgb_out_vars, rgb_out_logits = i3d_rgb(rgbs)
                 #rgb_preds = torch.round(rgb_out_vars.data)
                 rgb_preds = torch.tensor([torch.argmax(var) 
                                           for var in rgb_out_vars.data])
                 ''' flow model '''
                 optimizer['flow'].zero_grad()
-                flows = Variable(flows.to(device))
+                flows = Variable(flows.cuda())
                 flow_out_vars, flow_out_logits = i3d_flow(flows)
                 #flow_preds = torch.round(flow_out_vars.data)
                 flow_preds = torch.tensor([torch.argmax(var) 
@@ -177,14 +174,14 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                     out_logit = (rgb_out_logits + flow_out_logits)/2
                     #out_sigmoid = torch.sigmoid(out_logit)
                     #out_preds = torch.round(out_sigmoid.data)
-                    #out_loss= criterion(out_sigmoid, targets).to(device)
+                    #out_loss= criterion(out_sigmoid, targets).cuda()
                     
                     out_softmax = torch.softmax(out_logit, 1)
                     out_preds = torch.tensor([torch.argmax(var) 
                                   for var in out_softmax.data])
                     out_loss = criterion(out_softmax, targets
-#                                             , weight = weight_per_class
-                                            ).to(device)
+                                            , weight = weight_per_class
+                                            ).cuda()
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -193,9 +190,9 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                         optimizer['flow'].step()
             
                 running_loss += out_loss.item() * rgbs.size(0)
-                running_corrects['rgb'] += torch.sum(rgb_preds.to(device) == targets.to(device))
-                running_corrects['joint'] += torch.sum(out_preds.to(device) == targets.to(device))
-                running_corrects['flow'] += torch.sum(flow_preds.to(device) == targets.to(device))
+                running_corrects['rgb'] += torch.sum(rgb_preds.cuda() == targets.cuda())
+                running_corrects['joint'] += torch.sum(out_preds.cuda() == targets.cuda())
+                running_corrects['flow'] += torch.sum(flow_preds.cuda() == targets.cuda())
 
             ## for plotting 
             # per epoch
@@ -214,13 +211,13 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
             if phase == 'train':
                 # if pytorch version > 1.1.0
                 if scheduler['rgb'] is not None:
-                    scheduler['rgb'].step()
+#                     scheduler['rgb'].step()
                     writer.add_scalars('learning_rate', 
-                                      {'rgb': scheduler['rgb'].get_lr()[0]}, epoch)
+                                      {'rgb': scheduler['rgb'].get_last_lr()[0]}, epoch)
                 if scheduler['flow'] is not None:
-                    scheduler['flow'].step()
+#                     scheduler['flow'].step()
                     writer.add_scalars('learning_rate', 
-                                      {'flow': scheduler['flow'].get_lr()[0]}, epoch)
+                                      {'flow': scheduler['flow'].get_last_lr()[0]}, epoch)
 
             # deep copy best model
             if phase == 'val':
@@ -276,4 +273,6 @@ def train(models, dataloaders, optimizer, criterion, scheduler, device, num_epoc
                os.path.join(logpath, '{}_{}_bestiters_{}.pth'.format('handhygiene', 'i3d_flow', best_iters['flow'])))
 
     writer.close()
+    manager.shutdown()
+    torch.cuda.empty_cache()
     return 

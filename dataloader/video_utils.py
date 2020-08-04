@@ -261,10 +261,16 @@ class VideoClips(object):
         info['label']= label
         return video, audio, info, video_idx
 
-    def cache_all(self):
+#     def cache_video_all(self, manager):
+#         self.shared_data = manager.list([self.get_video(video_idx) for video_idx 
+#                             in tqdm(range(len(self.video_paths)))])
+    
+    def cache_video_all(self):
         self.shared_data = [self.get_video(video_idx) for video_idx 
                             in tqdm(range(len(self.video_paths)))]
     
     def set_shared_manager(self, manager):
         self.shared_manager = manager
-        self.shared_data = manager.list([None for video_path in self.video_paths])
+        print("setting manager....")
+        self.shared_data = self.shared_manager.list([None for video_path in self.video_paths])
+        print("mp manager initialized....")

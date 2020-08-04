@@ -1,5 +1,7 @@
 import torch
 import torch.utils.data as data
+from torch.utils.data.sampler import BatchSampler
+
 from torchvision.datasets.utils import list_dir
 from torchvision.datasets.folder import IMG_EXTENSIONS
 from torchvision.datasets.folder import has_file_allowed_extension
@@ -7,6 +9,11 @@ from torchvision.io.video import write_video
 from torchvision.datasets.vision import VisionDataset
 from torchvision.transforms import functional as F
 from .video_utils import VideoClips
+from .handhygiene import HandHygiene
+from .handhygiene import make_dataset
+from .handhygiene import get_annotations
+from .handhygiene import has_target_action
+from .handhygiene import get_classes
 
 import os
 import numpy as np
@@ -16,45 +23,8 @@ from tqdm import tqdm
 from glob import glob
 import logging
 
-
-def make_dataset(dir, classes, df_annotations, extensions=None, is_valid_file=None):
-    folders=[]
-    class_to_idx = {classes[i]: i for i in range(len(classes))}
-    for fname in os.listdir(dir):
-        #item = (os.path.join(dir, label, fname), class_to_idx[label])
-        
-        person_ids, actions = get_annotations(fname, df_annotations)
-        if has_target_action(classes, actions):
-            
-            items = [item for item in zip(person_ids, actions) if item[1] in classes]
-            person_ids = [item[0] for item in items]
-            actions = [item[1] for item in items]
     
-            labels = [class_to_idx[action] for action in actions]
-            item = (os.path.join(dir, fname), person_ids, labels)
-            folders.append(item)
-    return folders
-
-def get_annotations(fname, df_annotations):
-    df = df_annotations
-    rows = df[df['image_path'] == fname]
-    person_ids = rows['person_id'].values.tolist()
-    actions    = rows['action'].values.tolist()
-    return (person_ids, actions)
-
-def has_target_action(targets, actions):
-    return any([action in targets for action in actions])
-
-
-def get_classes(label_txt):
-    with open(label_txt) as f:
-        actions = f.readlines()
-    actions = [a.strip('\n').strip(' ') for a in actions]
-    print("Training for classes {}".format(', '.join(actions)))
-    return actions
-    
-    
-class HandHygiene(VisionDataset):
+class HandHygiene_Triplet(HandHygiene):
     def __init__(self, root, frames_per_clip, 
                  step_between_clips=1,
                  frame_rate=None,
@@ -73,10 +43,10 @@ class HandHygiene(VisionDataset):
         self.classes = get_classes(label_list_path)
         self.class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}
         self.df_annotations  = pd.read_csv(annotation_path)
-        ### TEMP
+        
+        ### TEMP (label change)
         df = self.df_annotations.copy()
         df.loc[df['action']=='removing_gloves', 'action'] = 'wearing_gloves'
-        df.loc[df['action']=='wearing_gloves', 'action'] = 'rubbing_hands'
         self.df_annotations = df
         
         if opt_flow_preprocess:
@@ -118,62 +88,126 @@ class HandHygiene(VisionDataset):
         print("Number of frames: ", self._num_frames_per_class())
         print("Total number of frames:", self._num_frames_in_clips_per_class())
         
-    def _make_item(self, idx): 
-        video, _, info, video_idx = self.video_clips.get_clip(idx)
+        
+        _vidxs = [s[0] for s in self.video_clips.info]
+        self.labels = [s[-1] for s in self.video_clips.info]
+        self.label_to_indices = {label: np.where(np.array(self.labels) == label)[0]
+                                             for label in set(self.labels)}
+        
+        if not self._is_train: 
+            # Creates fixed triplets for testing
+            # https://github.com/adambielski/siamese-triplet/blob/master/datasets.py
+            random_state = np.random.RandomState(42)
+            triplets = [[i,
+                         #random_state.choice(label_to_indices[self.labels[i]]),
+                         random_state.choice(
+                             [lidx for lidx in label_to_indices[self.labels[i]]
+                             if _vidxs[lidx] != _vidxs[i]] # positive sample이 같은 비디오에서 나오지 않게
+                         ),
+                         random_state.choice(
+                             [lidx for lidx in label_to_indices[
+                                 np.random.choice(
+                                     list(set(self.labels) - set([self.labels[i]])))
+                             ] if _vidxs[lidx] != _vidxs[i]])]
+                        for i in range(len(self.labels))]
+            self.test_triplets = triplets
+        
+
+    def _get_clip_pair(self, idx):
+        """ return (video, optflow, bbox, label) pair of an item """
+        video, _, info, _ = self.video_clips.get_clip(idx)
         optflow, _, _, _ = self.optflow_clips.get_clip(idx)
         video = self._to_pil_image(video)
         optflow = self._to_pil_image(optflow)
-        
+        #label = self.class_to_idx[info['label']]
         label = info['label']
-        label = self.class_to_idx[label]        
-        '''
-        keypoints = info['keypoints']
-        if keypoints is None:
-            print("idx: {} not having keypoints".format(idx))
-        elif isinstance(keypoints, list) and len(keypoints) == 0:
-            print("idx: {} not having keypoints".format(idx))
-            
-        rois = self._get_clip_coord(idx, keypoints)
-        '''
-        bboxes = self._get_bounding_box(info, fixed_fov=True, upper_only=True, align=False, padding=False)
+        bboxes = self._get_bounding_box(info)
         return (video, optflow, bboxes, label)
     
+    
+    def _make_item(self, idx):
+        modes = ['anchor', 'pos', 'neg']
+        
+        if self._is_train:
+            sample = {mode: {data: torch.tensor(0) 
+                             for data in ['rgb', 'flow', 'bbox']} 
+                             for mode in modes} # ['anchor', 'pos', 'neg']
+            
+            video, optflow, bboxes, label = self._get_clip_pair(idx)
+            sample['anchor']['rgb'] = video
+            sample['anchor']['flow'] = optflow
+            sample['anchor']['bbox'] = bboxes
+            sample['anchor']['label'] = label
+
+            pos_idx = idx
+            while pos_idx == idx:
+                pos_idx = np.random.choice(self.label_to_indices[label])
+                neg_label = np.random.choice(list(set(self.labels) - set([label])))
+                neg_idx = np.random.choice(self.label_to_indices[neg_label])
+                
+                video, optflow, bboxes, label = self._get_clip_pair(pos_idx)
+                sample['pos']['rgb'] = video
+                sample['pos']['flow'] = optflow
+                sample['pos']['bbox'] = bboxes
+                sample['pos']['label'] = label
+                video, optflow, bboxes, label = self._get_clip_pair(neg_idx)
+                sample['neg']['rgb'] = video
+                sample['neg']['flow'] = optflow
+                sample['neg']['bbox'] = bboxes
+                sample['neg']['label'] = label
+        else:
+            anchor_idx, pos_idx, neg_idx = self.test_triplets[idx]
+            
+            for i, idx_tmp in enumerate([anchor_idx, pos_idx, neg_idx]):
+                video, optflow, bboxes, label = self._get_clip_pair(idx_tmp)
+                sample[modes[i]]['rgb'] = video
+                sample[modes[i]]['flow'] = optflow
+                sample[modes[i]]['bbox'] = bboxes
+                sample[modes[i]]['bbox'] = label
+        return sample
+    
     def __getitem__(self, idx):
-        video, optflow, rois, label = self._make_item(idx)
+        modes = ['anchor', 'pos', 'neg']
+        sample = self._make_item(idx)
         
-        if self.temporal_transform is not None:
-            self.temporal_transform.randomize_parameters()
-            video = self.temporal_transform(video)
-            optflow = self.temporal_transform(optflow)
-            rois = self.temporal_transform(rois)
+        for mode in modes:
+            video = sample[mode]['rgb']
+            optflow = sample[mode]['flow']
+            rois = sample[mode]['bbox']
+            label = sample[mode]['label']
+            label = self.class_to_idx[label]
             
-        _, _, info, video_idx = self.video_clips.get_clip(idx)
-        assert len(rois) == 16, print(self.video_list[video_idx], rois)
+            if self.temporal_transform is not None:
+                self.temporal_transform.randomize_parameters()
+                video = self.temporal_transform(video)
+                optflow = self.temporal_transform(optflow)
+                rois = self.temporal_transform(rois)
+
+            if self.openpose_transform is not None:
+                self.openpose_transform.randomize_parameters()
+                video = [self.openpose_transform(v, rois, i) 
+                         for i, v in enumerate(video)]
+                optflow = [self.openpose_transform(f, rois, i) 
+                           for i, f in enumerate(optflow)]
+
+            if self.spatial_transform is not None:
+                self.spatial_transform.randomize_parameters()
+                video = [self.spatial_transform(img) for img in video]
+                optflow = [self.spatial_transform(img) for img in optflow]
+
+            
+            video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
+            optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
+            optflow = optflow[:-1,:,:,:] # 3->2 channel
+            label = torch.tensor(label)
+            
+            sample[mode]['rgb'] = video
+            sample[mode]['flow'] = optflow
+            sample[mode]['label'] = label
         
-        if self.openpose_transform is not None:
-            self.openpose_transform.randomize_parameters()
-            video = [self.openpose_transform(v, rois, i) 
-                     for i, v in enumerate(video)]
-            optflow = [self.openpose_transform(f, rois, i) 
-                       for i, f in enumerate(optflow)]
-            if len(video)==0:
-                print("windows empty")
-                
-                
-        if self.spatial_transform is not None:
-            self.spatial_transform.randomize_parameters()
-            video = [self.spatial_transform(img) for img in video]
-            optflow = [self.spatial_transform(img) for img in optflow]
-            
-        video = torch.stack(video).transpose(0, 1) # TCHW-->CTHW
-        optflow = torch.stack(optflow).transpose(0, 1) # TCHW-->CTHW
-        optflow = optflow[:-1,:,:,:] # 3->2 channel
-        label = torch.tensor(label)
-        
-        if len(self.classes) < 2:
-            label = label.unsqueeze(0) # () -> (1,) for binary classification
-            
-        return video, optflow, label
+        return [(sample[mode]['rgb'], 
+                 sample[mode]['flow'],
+                 sample[mode]['label']) for mode in modes]
     
     def _init_steps(self, step_between_clips):
         if isinstance(step_between_clips, dict):
@@ -192,20 +226,6 @@ class HandHygiene(VisionDataset):
             (vidx, idx, pidx, cidx, label), vidx_c = self.video_clips.get_clip_location(i)
             num_clips[label] += 1
         return num_clips
-    
-    '''
-    def _num_frames_per_class(self):
-        classes = self.classes
-        class_to_idx = {classes[i]: i for i in range(len(classes))}
-        num_frames = {cls:0 for cls in classes}
-        
-        for path in self.video_clips.video_paths:
-            length = self.video_clips.num_image_frames(path)
-            _, _, label, _ = self.video_clips._split_path(path)
-            label = class_to_idx[label]
-            num_frames[classes[label]] += length
-        return num_frames
-    '''
     
     def _num_frames_per_class(self):
         import pandas as pd
@@ -233,48 +253,7 @@ class HandHygiene(VisionDataset):
                 num_frames[label] += len(v)
         return num_frames
     
-    '''
-    def _get_clip_coord(self, idx, coords):
-        fpc = self.frames_per_clip
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        label = self.samples[vidx][1]
-        step = self.steps[self.classes[label]]
-        start= cidx * step
-        rois = self._smoothing(coords)
-        rois = rois[start:start+fpc]
-        return rois
-    '''
-    '''
-    def _get_bounding_box(self, info, align=True, padding=True): #, label):
-        
-        person_id = info['target_ids']
-        bboxes = []
-        for i in info['annotations']:
-            #for person_id in person_ids:
-            for shape in i['shapes']:
-                if shape['group_id'] == int(person_id):
-                    bbox = shape['points']
-
-                    if bbox == [[0.0, 0.0]]:
-                        bbox = [[0.0, 0.0], [0.0, 0.0]]
-                    assert np.asarray(bbox).shape == (2,2), i['imagePath']
-
-                    x1, y1, x2, y2 = np.reshape(np.asarray(bbox), (4))
-                    w = x2 - x1
-                    h = y2 - y1
-                    bboxes.append([x1, y1, w, h])
-
-            continue # dealing with a single target  
-                
-        if align:
-            bboxes = [self.align_boundingbox(b) for b in bboxes]
-        if padding:
-            bboxes = self._padding(bboxes)
-        
-        return bboxes
-    '''
-    
-    def _get_bounding_box(self, info, fixed_fov=False, upper_only=False, align=False, padding=False): #, label):
+    def _get_bounding_box(self, info, fixed_fov=True, upper_only=True, align=False, padding=False): #, label):
         
         person_id = info['target_id']
         bboxes = []
@@ -407,3 +386,49 @@ class HandHygiene(VisionDataset):
     def __len__(self):
         return self.video_clips.num_clips()
     
+
+    def _is_train(self):
+        return True if os.path.basename(self.root) == 'train' else False
+    
+    
+    
+class BalancedBatchSampler(BatchSampler):
+    """
+    Taken from "https://github.com/adambielski/siamese-triplet/blob/master/datasets.py"
+    BatchSampler - from a MNIST-like dataset, samples n_classes and within these classes samples n_samples.
+    Returns batches of size n_classes * n_samples
+    """
+
+    def __init__(self, labels, n_classes, n_samples):
+        self.labels = labels
+        self.labels_set = self.labels
+        self.label_to_indices = {label: np.where(np.array(self.labels) == label)[0]
+                                             for label in set(self.labels)}
+        for l in self.labels_set:
+            np.random.shuffle(self.label_to_indices[l])
+            
+        self.used_label_indices_count = {label: 0 for label in self.labels_set}
+        self.count = 0
+        self.n_classes = n_classes
+        self.n_samples = n_samples
+        self.n_dataset = len(self.labels)
+        self.batch_size = self.n_samples * self.n_classes
+
+    def __iter__(self):
+        self.count = 0
+        while self.count + self.batch_size < self.n_dataset:
+            classes = np.random.choice(self.labels_set, self.n_classes, replace=False)
+            indices = []
+            for class_ in classes:
+                indices.extend(self.label_to_indices[class_][
+                               self.used_label_indices_count[class_]:self.used_label_indices_count[
+                                                                         class_] + self.n_samples])
+                self.used_label_indices_count[class_] += self.n_samples
+                if self.used_label_indices_count[class_] + self.n_samples > len(self.label_to_indices[class_]):
+                    np.random.shuffle(self.label_to_indices[class_])
+                    self.used_label_indices_count[class_] = 0
+            yield indices
+            self.count += self.n_classes * self.n_samples
+
+    def __len__(self):
+        return self.n_dataset // self.batch_size
