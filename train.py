@@ -1,6 +1,7 @@
 import os
 import time
 import copy
+import json
 import pathlib
 import torch
 import torch.nn as nn
@@ -48,7 +49,7 @@ def get_in_channels(ordereddict, custom_key='conv3d_0c_1x1.1.conv3d.'):
         
         
 def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=True,
-              rgb_weights_path='model/model_rgb.pth',
+              rgb_weights_path = 'model/model_rgb.pth',
               flow_weights_path = 'model/model_flow.pth'):
     
     if load_pt_weights:
@@ -68,7 +69,6 @@ def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=Tru
     
     i3d_rgb = I3D(num_classes=400, modality='rgb', dropout_prob=0.5)
     i3d_flow = I3D(num_classes=400, modality='flow', dropout_prob=0.5)
-    #i3d_rgb = I3D(num_classes=400, modality='grey', dropout_prob=0.5)
     
     if load_pt_weights:
         
@@ -102,33 +102,39 @@ def get_models(num_classes, feature_extract, training_num=0, load_pt_weights=Tru
             
     #i3d_rgb.softmax = torch.nn.Sigmoid()
     #i3d_flow.softmax = torch.nn.Sigmoid()
-    
     return i3d_rgb, i3d_flow
 
 
-def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, start_epoch=0, manager=None):
+def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, start_epoch=0, manager=None, args=None):
     
+    if args:
+        jsonpath = os.path.join(logpath, "arguments.json")
+        with open(jsonpath, 'w') as f:
+            json.dump(args, f, sort_keys=True, indent=4)
+        print("argument saved in {}.....".format(jsonpath))
+        
     since = time.time()
     i3d_rgb, i3d_flow = models
     best_model_wts = {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict(),
                      'joint': {'rgb':i3d_rgb.state_dict(), 'flow':i3d_flow.state_dict()}}
     best_acc = {'rgb':0.0, 'flow':0.0, 'joint':0.0}
     best_iters = {'rgb':0, 'flow':0, 'joint':0}
-    iterations = {'train': start_epoch*dataloaders['train'].dataset.__len__(), 
-                  'val': start_epoch*dataloaders['val'].dataset.__len__()}
+    iterations = {'train': start_epoch * dataloaders['train'].dataset.__len__(), 
+                  'val': start_epoch * dataloaders['val'].dataset.__len__()}
     
     
     for epoch in tqdm(range(num_epochs)[start_epoch:]):
 
         for phase in ['train', 'val']:
+            
+            
             if epoch == start_epoch:
                 
                 if manager is not None:
-                    #dataloaders[phase].dataset.video_clips.cache_all()
                     dataloaders[phase].dataset.video_clips.set_shared_manager(manager)
                     dataloaders[phase].dataset.optflow_clips.set_shared_manager(manager)
-                    dataloaders[phase].dataset.video_clips.cache_video_all()
-                    dataloaders[phase].dataset.optflow_clips.cache_video_all()
+                    #dataloaders[phase].dataset.video_clips.cache_video_all()
+                    #dataloaders[phase].dataset.optflow_clips.cache_video_all()
                 
             if phase == 'train':
                 i3d_rgb.train()
@@ -139,15 +145,10 @@ def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, s
 
             running_loss = 0.0
             running_corrects = {'rgb':0, 'flow':0, 'joint':0}
+            data_len = len(dataloaders[phase].dataset)
             
             ''' for class weight '''
-            num_per_class = dataloaders[phase].dataset._num_clips_per_class()
-            classes = dataloaders[phase].dataset.classes
-            total_num = sum([num_per_class[key] for key in num_per_class])
-            #weight_per_class = {cls: 1-(num_per_class[cls]/total_num) for cls in classes}
-            #weight_per_class = torch.tensor([weight_per_class[cls] for cls in classes]).cuda()
-            
-            weight_per_class = torch.tensor([1.25, 1.0, 1.0]).cuda()
+            weight_per_class = torch.tensor(dataloaders[phase].dataset.args.class_weight).cuda()
             
             for i, (samples) in enumerate(dataloaders[phase]):
                 iterations[phase] += 1
@@ -197,25 +198,25 @@ def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, s
             ## for plotting 
             # per epoch
             if phase == 'train':
-                train_epoch_loss = running_loss / len(dataloaders[phase].dataset)
-                train_epoch_rgb_acc = running_corrects['rgb'].double()  / len(dataloaders[phase].dataset)
-                train_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
-                train_epoch_flow_acc = running_corrects['flow'].double()  / len(dataloaders[phase].dataset)
+                train_epoch_loss = running_loss / data_len
+                train_epoch_rgb_acc = running_corrects['rgb'].double()  / data_len
+                train_epoch_joint_acc = running_corrects['joint'].double()  / data_len
+                train_epoch_flow_acc = running_corrects['flow'].double()  / data_len
             else:
-                valid_epoch_loss = running_loss / len(dataloaders[phase].dataset)
-                valid_epoch_rgb_acc = running_corrects['rgb'].double() / len(dataloaders[phase].dataset)
-                valid_epoch_joint_acc = running_corrects['joint'].double()  / len(dataloaders[phase].dataset)
-                valid_epoch_flow_acc = running_corrects['flow'].double() / len(dataloaders[phase].dataset)
+                valid_epoch_loss = running_loss / data_len
+                valid_epoch_rgb_acc = running_corrects['rgb'].double() / data_len
+                valid_epoch_joint_acc = running_corrects['joint'].double()  / data_len
+                valid_epoch_flow_acc = running_corrects['flow'].double() / data_len
             
             
             if phase == 'train':
                 # if pytorch version > 1.1.0
                 if scheduler['rgb'] is not None:
-#                     scheduler['rgb'].step()
+                    scheduler['rgb'].step()
                     writer.add_scalars('learning_rate', 
                                       {'rgb': scheduler['rgb'].get_last_lr()[0]}, epoch)
                 if scheduler['flow'] is not None:
-#                     scheduler['flow'].step()
+                    scheduler['flow'].step()
                     writer.add_scalars('learning_rate', 
                                       {'flow': scheduler['flow'].get_last_lr()[0]}, epoch)
 
@@ -244,15 +245,15 @@ def train(models, dataloaders, optimizer, criterion, scheduler, num_epochs=50, s
                                             'validation_rgb': valid_epoch_rgb_acc,
                                             'validation_flow': valid_epoch_flow_acc,
                                             'validation_joint': valid_epoch_joint_acc}, epoch)
-
-        torch.save(i3d_rgb.state_dict(), 
-                   os.path.join(logpath, '{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_rgb', epoch)))
-        torch.save(i3d_flow.state_dict(), 
-               os.path.join(logpath, '{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_flow', epoch)))
+        
+        if epoch / 5 == 0 and epoch != start_epoch:
+            torch.save(i3d_rgb.state_dict(), 
+                       os.path.join(logpath, '{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_rgb', epoch)))
+            torch.save(i3d_flow.state_dict(), 
+                   os.path.join(logpath, '{}_{}_epoch_{}.pth'.format('handhygiene', 'i3d_flow', epoch)))
 
         print('Epoch [{}/{}] train loss: {:.4f} acc: {:.4f} ' 'valid loss: {:.4f} acc: {:.4f}'.format(epoch, num_epochs - 1, train_epoch_loss, train_epoch_joint_acc, valid_epoch_loss, valid_epoch_joint_acc))
 
-    manager.shutdown()
     print('Best Joint val Acc: {:4f}'.format(best_acc['joint']))
     print('Best RGB val Acc: {:4f}'.format(best_acc['rgb']))
     print('Best Flow val Acc: {:4f}'.format(best_acc['flow']))
