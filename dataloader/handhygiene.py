@@ -55,62 +55,58 @@ def get_classes(label_txt):
     
     
 class HandHygiene(VisionDataset):
-    def __init__(self, root, frames_per_clip, 
-                 step_between_clips=1,
-                 frame_rate=None,
-                 downsample_size=None,
+    def __init__(self, root, 
                  openpose_transform=None,
                  spatial_transform=None,
                  temporal_transform=None,
-                 opt_flow_preprocess=False, 
-                 with_detection=True, 
-                 label_list_path='./data/annotations/hh_action_list.txt',
-                 annotation_path='./data/annotations/hh_target.csv'):
+                 arguments=None):
 
         super(HandHygiene, self).__init__(root)
         extensions = ('',) #tmp
-        #classes = list(sorted(list_dir(root)))[::-1]
-        self.classes = get_classes(label_list_path)
+
+        self.classes = arguments.label
         self.class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}
-        self.df_annotations  = pd.read_csv(annotation_path)
-        ### TEMP
+        self.df_annotations  = pd.read_csv(arguments.annotation_path)
+        
+        # to change label for experiments
         df = self.df_annotations.copy()
-        df.loc[df['action']=='removing_gloves', 'action'] = 'wearing_gloves'
-        df.loc[df['action']=='wearing_gloves', 'action'] = 'rubbing_hands'
+        for k, v in arguments.as_action.items():
+            df.loc[df['action']==k, 'action'] = v
         self.df_annotations = df
         
-        if opt_flow_preprocess:
+        if arguments.preproceed_optical_flow:
             self.preprocess(extensions[0], useCuda=False)
         
-        #self.samples = make_dataset(self.root, class_to_idx, annotation_path)
         self.samples = make_dataset(self.root, self.classes, self.df_annotations)
-        
-        self.frames_per_clip = frames_per_clip
-        self.steps = self._init_steps(step_between_clips)
+        self.frames_per_clip = arguments.clip_len
+        self.steps = arguments.steps # should be dict
         self.video_list = [x[0] for x in self.samples]
         
         # TODO: use video_utils subset
         self.optflow_list = [self._optflow_path(x) for x in self.video_list]
         
+        
+        with_detection = True if arguments.task == "detection" else False
         self.video_clips = VideoClips(self.video_list, 
-                                      frames_per_clip, 
-                                      step_between_clips, 
-                                      frame_rate,
+                                      self.frames_per_clip, 
+                                      self.steps, 
+                                      arguments.frame_rate,
                                       with_detection=with_detection,
-                                      downsample_size=downsample_size,
+                                      downsample_size=arguments.downsample_size,
                                       annotation=self.df_annotations,
                                       target_classes=self.classes)
         
         self.optflow_clips = VideoClips(self.optflow_list, 
-                                        frames_per_clip, 
-                                        step_between_clips, 
-                                        frame_rate,
+                                        self.frames_per_clip, 
+                                        self.steps, 
+                                        arguments.frame_rate,
                                         annotation=self.df_annotations,
                                         target_classes=self.classes)
         
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.openpose_transform = openpose_transform
+        self.args = arguments
         
         print('Number of {} video clips: {:d} ({:d} images)'.format(
             root, self.video_clips.num_clips(), self.video_clips.num_total_frames()))
@@ -135,7 +131,7 @@ class HandHygiene(VisionDataset):
             
         rois = self._get_clip_coord(idx, keypoints)
         '''
-        bboxes = self._get_bounding_box(info, fixed_fov=True, upper_only=True, align=False, padding=False)
+        bboxes = self._get_bounding_box(info)
         return (video, optflow, bboxes, label)
     
     def __getitem__(self, idx):
@@ -159,7 +155,6 @@ class HandHygiene(VisionDataset):
             if len(video)==0:
                 print("windows empty")
                 
-                
         if self.spatial_transform is not None:
             self.spatial_transform.randomize_parameters()
             video = [self.spatial_transform(img) for img in video]
@@ -174,14 +169,6 @@ class HandHygiene(VisionDataset):
             label = label.unsqueeze(0) # () -> (1,) for binary classification
             
         return video, optflow, label
-    
-    def _init_steps(self, step_between_clips):
-        if isinstance(step_between_clips, dict):
-            self.steps = step_between_clips
-        else:
-            self.steps = {label:step_between_clips 
-                          for label in self.classes}
-        return self.steps
 
     
     def _num_clips_per_class(self):
@@ -274,7 +261,7 @@ class HandHygiene(VisionDataset):
         return bboxes
     '''
     
-    def _get_bounding_box(self, info, fixed_fov=False, upper_only=False, align=False, padding=False): #, label):
+    def _get_bounding_box(self, info):#, label):
         
         person_id = info['target_id']
         bboxes = []
@@ -285,13 +272,13 @@ class HandHygiene(VisionDataset):
             h = y2 - y1
             bboxes.append([x1, y1, w, h])
 
-        if fixed_fov:
+        if self.args.fix_fov:
             bboxes = self.fix_field_of_view(bboxes)
-        if upper_only:
+        if self.args.crop_upper:
             bboxes = [self.crop_upper_body_with_ratio(b) for b in bboxes]
-        if align:
+        if self.args.align:
             bboxes = [self.align_boundingbox(b) for b in bboxes]
-        if padding:
+        if self.args.padding:
             bboxes = self._padding(bboxes)
         
         return bboxes
