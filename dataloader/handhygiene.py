@@ -21,9 +21,9 @@ def make_dataset(dir, classes, df_annotations, extensions=None, is_valid_file=No
     folders=[]
     class_to_idx = {classes[i]: i for i in range(len(classes))}
     for fname in os.listdir(dir):
-        #item = (os.path.join(dir, label, fname), class_to_idx[label])
         
         person_ids, actions = get_annotations(fname, df_annotations)
+        
         if has_target_action(classes, actions):
             
             items = [item for item in zip(person_ids, actions) if item[1] in classes]
@@ -34,6 +34,46 @@ def make_dataset(dir, classes, df_annotations, extensions=None, is_valid_file=No
             item = (os.path.join(dir, fname), person_ids, labels)
             folders.append(item)
     return folders
+
+
+def make_dataset_det(dir, classes, df_annotations, df_detection, extensions=None, is_valid_file=None):
+    import time
+    tic = time.time()
+    print("Making action tubelets.....")
+    folders=[]
+    tubelets_all=[]
+    class_to_idx = {classes[i]: i for i in range(len(classes))}
+    for fname in os.listdir(dir):
+        
+        tubelets = get_detections(dir, fname, df_annotations, df_detection)
+        if len(tubelets) < 1:
+            continue
+        person_ids = list(tubelets.keys())
+        actions    = [v[1] for k, v in tubelets.items()]
+        
+        if has_target_action(classes, actions):
+            
+            items = [item for item in zip(person_ids, actions) if item[1] in classes]
+            person_ids = [item[0] for item in items]
+            actions = [item[1] for item in items]
+    
+            labels = [class_to_idx[action] for action in actions]
+            item = (os.path.join(dir, fname), person_ids, labels)
+            folders.append(item)
+            tubelets_all.append([fname, tubelets])
+    print("Took {} secs for making action tubelets".format(time.time()-tic))
+    return folders, tubelets_all
+
+
+def get_detections(dir, fname, df_annotations, df_detection):
+    from dataloader.io.video import _set_info_annotation
+    from dataloader.io.video import _get_action_tubelet_w_detection
+    
+    info_ann = _set_info_annotation(os.path.join(dir, fname), df_annotations)
+    df_tmp = df_detection
+    row = df_tmp[df_tmp['video_path'] == fname]
+    tubelets = _get_action_tubelet_w_detection(fname, info_ann, df_detection)
+    return tubelets
 
 def get_annotations(fname, df_annotations):
     df = df_annotations
@@ -66,18 +106,35 @@ class HandHygiene(VisionDataset):
 
         self.classes = arguments.label
         self.class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}
-        self.df_annotations  = pd.read_csv(arguments.annotation_path)
+        self.tubelets_all = None
+        
+        # annotation settings: GT
+        if arguments.annotation_path.endswith('csv'):
+            self.df_annotations  = pd.read_csv(arguments.annotation_path)
+        elif arguments.annotation_path.endswith('json'):
+            import json
+            self.df_annotations  = None
+        else:
+            print("Unregistered type of annotation. Use either .csv or .json format")
+        # annotation settings: Detector
+        if 'detection_path' in arguments.keys():
+            self.df_detection = pd.read_csv(arguments.detection_path)
         
         # to change label for experiments
         df = self.df_annotations.copy()
         for k, v in arguments.as_action.items():
             df.loc[df['action']==k, 'action'] = v
-        self.df_annotations = df
+            self.df_annotations = df
         
         if arguments.preproceed_optical_flow:
             self.preprocess(extensions[0], useCuda=False)
         
-        self.samples = make_dataset(self.root, self.classes, self.df_annotations)
+        #TODO
+        if 'detection_path' not in arguments.keys():
+            self.samples = make_dataset(self.root, self.classes, self.df_annotations)
+        else:
+            self.samples, self.tubelets_all = make_dataset_det(self.root, self.classes, self.df_annotations, self.df_detection)
+            
         self.frames_per_clip = arguments.clip_len
         self.steps = arguments.steps # should be dict
         self.video_list = [x[0] for x in self.samples]
@@ -85,15 +142,14 @@ class HandHygiene(VisionDataset):
         # TODO: use video_utils subset
         self.optflow_list = [self._optflow_path(x) for x in self.video_list]
         
-        
-        with_detection = True if arguments.task == "detection" else False
         self.video_clips = VideoClips(self.video_list, 
                                       self.frames_per_clip, 
                                       self.steps, 
                                       arguments.frame_rate,
-                                      with_detection=with_detection,
+                                      with_detection= (arguments.task == "detection"),
                                       downsample_size=arguments.downsample_size,
                                       annotation=self.df_annotations,
+                                      detection = self.tubelets_all,
                                       target_classes=self.classes)
         
         self.optflow_clips = VideoClips(self.optflow_list, 
@@ -101,6 +157,7 @@ class HandHygiene(VisionDataset):
                                         self.steps, 
                                         arguments.frame_rate,
                                         annotation=self.df_annotations,
+                                        detection = self.tubelets_all,
                                         target_classes=self.classes)
         
         self.spatial_transform = spatial_transform
@@ -121,16 +178,7 @@ class HandHygiene(VisionDataset):
         optflow = self._to_pil_image(optflow)
         
         label = info['label']
-        label = self.class_to_idx[label]        
-        '''
-        keypoints = info['keypoints']
-        if keypoints is None:
-            print("idx: {} not having keypoints".format(idx))
-        elif isinstance(keypoints, list) and len(keypoints) == 0:
-            print("idx: {} not having keypoints".format(idx))
-            
-        rois = self._get_clip_coord(idx, keypoints)
-        '''
+        label = self.class_to_idx[label]
         bboxes = self._get_bounding_box(info)
         return (video, optflow, bboxes, label)
     
@@ -219,50 +267,9 @@ class HandHygiene(VisionDataset):
                 label = row[-1]
                 num_frames[label] += len(v)
         return num_frames
-    
-    '''
-    def _get_clip_coord(self, idx, coords):
-        fpc = self.frames_per_clip
-        vidx, cidx = self.video_clips.get_clip_location(idx)
-        label = self.samples[vidx][1]
-        step = self.steps[self.classes[label]]
-        start= cidx * step
-        rois = self._smoothing(coords)
-        rois = rois[start:start+fpc]
-        return rois
-    '''
-    '''
-    def _get_bounding_box(self, info, align=True, padding=True): #, label):
-        
-        person_id = info['target_ids']
-        bboxes = []
-        for i in info['annotations']:
-            #for person_id in person_ids:
-            for shape in i['shapes']:
-                if shape['group_id'] == int(person_id):
-                    bbox = shape['points']
 
-                    if bbox == [[0.0, 0.0]]:
-                        bbox = [[0.0, 0.0], [0.0, 0.0]]
-                    assert np.asarray(bbox).shape == (2,2), i['imagePath']
-
-                    x1, y1, x2, y2 = np.reshape(np.asarray(bbox), (4))
-                    w = x2 - x1
-                    h = y2 - y1
-                    bboxes.append([x1, y1, w, h])
-
-            continue # dealing with a single target  
-                
-        if align:
-            bboxes = [self.align_boundingbox(b) for b in bboxes]
-        if padding:
-            bboxes = self._padding(bboxes)
-        
-        return bboxes
-    '''
     
     def _get_bounding_box(self, info):#, label):
-        
         person_id = info['target_id']
         bboxes = []
         for i in info['annotations']:
@@ -272,10 +279,10 @@ class HandHygiene(VisionDataset):
             h = y2 - y1
             bboxes.append([x1, y1, w, h])
 
-        if self.args.fix_fov:
-            bboxes = self.fix_field_of_view(bboxes)
         if self.args.crop_upper:
             bboxes = [self.crop_upper_body_with_ratio(b) for b in bboxes]
+        if self.args.fix_fov:
+            bboxes = self.fix_field_of_view(bboxes)
         if self.args.align:
             bboxes = [self.align_boundingbox(b) for b in bboxes]
         if self.args.padding:
@@ -384,7 +391,7 @@ class HandHygiene(VisionDataset):
     
     def _get_clip_loc(self, idx):
         vidx, cidx = self.video_clips.get_clip_location(idx)
-        vname, person_ids, labels = self.samples[vidx]
+        #vname, person_ids, labels = self.samples[vidx]
         return (vidx, cidx)
     
     def _to_pil_image(self, video):

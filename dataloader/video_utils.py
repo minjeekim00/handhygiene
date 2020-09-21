@@ -29,9 +29,10 @@ def unfold(tensor, size, step, dilation=1):
 class VideoClips(object):
     def __init__(self, video_paths, clip_length_in_frames=16, frames_between_clips=1,
                  frame_rate=None, _precomputed_metadata=None, with_detection=False,
-                  downsample_size=None, annotation=None, target_classes=None):
+                  downsample_size=None, annotation=None, detection=None, target_classes=None):
         self.video_paths = video_paths
         self.annotation = annotation
+        self.detection = detection
         self.target_classes = target_classes
         if _precomputed_metadata is None:
             self._compute_frame_pts()
@@ -127,12 +128,16 @@ class VideoClips(object):
         self.info = []
         for vidx, (video_pts, fps) in enumerate(zip(self.video_pts, self.video_fps)):
             
-            # customize step per class
-            if True: #self.with_detection:
-                # TODO
-                frame = get_frames(self.video_paths[vidx])[0]
-                image_path = os.path.splitext(os.path.basename(frame))[0]
-                bbox = _get_bbox_info(image_path, self.annotation, target_classes)
+            if True: 
+                if self.detection is not None:
+                    from dataloader.io.video import tubelet_to_bbox
+                    video_path, tubelet = self.detection[vidx]
+                    bbox = tubelet_to_bbox(tubelet)[0]
+                    
+                else:
+                    frame = get_frames(self.video_paths[vidx])[0]
+                    image_path = os.path.splitext(os.path.basename(frame))[0]
+                    bbox = _get_bbox_info(image_path, self.annotation, target_classes)
                 
                 for i, (k, v )in enumerate(bbox.items()):
                     label = v[1]
@@ -145,6 +150,7 @@ class VideoClips(object):
                     for cidx in range(len(clips)):
                         #TODO:
                         self.info.append([vidx, i, k, cidx, label])
+                        
             else:
                 # get clip info
                 _, _, label, name = self._split_path(self.video_paths[vidx])
@@ -227,7 +233,7 @@ class VideoClips(object):
         video_path = self.video_paths[video_idx]
         
         if self.shared_data[video_idx] is None:
-            video = read_video(video_path, 0, None, self.with_detection, self.downsample_size, self.annotation)
+            video = read_video(video_path, 0, None, self.with_detection, self.downsample_size, self.annotation, self.detection)
             self.cache_video(video_idx, video)
                 
         return self.shared_data[video_idx]
@@ -240,7 +246,6 @@ class VideoClips(object):
         (video_idx, idx, person_idx, clip_idx, label), video_c = self.get_clip_location(idx)
         video_path = self.video_paths[video_idx]
         
-        #print("video_idx {}, idx {}, video_c {}, clip_idx {}".format(video_idx, idx, video_c, clip_idx))
         clip_pts = self.clips[video_c][clip_idx]
         start_pts = clip_pts[0].item()
         end_pts = clip_pts[-1].item()

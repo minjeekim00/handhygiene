@@ -7,7 +7,11 @@ import numpy as np
 import pandas as pd
 from glob import glob
 from PIL import Image
+#from ..poseroi import bb_intersection_over_union
 
+
+
+# TODO: all 2d bbox to 3d tubelet
 
 def get_frames(dirname):
     from torchvision.datasets.folder import is_image_file
@@ -15,7 +19,8 @@ def get_frames(dirname):
                    for file in os.listdir(dirname) 
                    if is_image_file(file)])
 
-def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=None, annotation=None):
+def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, 
+               downsample=None, annotation=None, detection=None):
     frames = get_frames(dirname)
     video = []
     
@@ -53,54 +58,33 @@ def read_video(dirname, start_pts=0, end_pts=None, has_bbox=False, downsample=No
            'keypoints': None,
            'annotations': []}
     
-    ## when has detection box in image frame
-    '''
     if has_bbox:
-        fname = os.path.basename(dirname)
-        txtfile = os.path.join(dirname, '{}.txt'.format(fname))
-        with open(txtfile, 'r') as f:
-            item = json.load(f)
-        
-        ## this is to get body keypoint coordinates,
-        ## otherwise skip
-        if not True: #need_preprocess:
-            info['keypoints'] = item
+        """ info_ann : a list of _get_bbox_info """
+        info_ann = _set_info_annotation(dirname, annotation)
+            
+        if detection is None:
+            info['annotations'] = info_ann
         else:
-            coords = preprocess_keypoints(dirname, item)
-            info['keypoints'] = coords
-
-        condition = len(coords['people']) == len(frames)
-        message = "{}: frames:{}, coords:{}".format(
-            dirname, len(frames), len(coords['people']))
-        assert condition, message
-    '''
-    """
-    if has_bbox:
-        from natsort import natsorted
-        fname = os.path.basename(dirname)
-        jsonfiles = natsorted(glob(os.path.join(dirname, '*.json')))
-        
-        for jsonfile in jsonfiles:
-            '''
-            bboxes = {{person_id_1: [[x1, y1, x2, y2], [label]] 
-                       person_id_2: [[x1, y1, x2, y2], [label]]}}
-            '''
-            bboxes = _get_bounding_box(fname, jsonfile, bbox_type='labelme')
-            info['annotations'].append(bboxes) 
+            video_path = os.path.basename(dirname)
+            tubelet = [tubelet[1] for tubelet in detection if tubelet[0] == video_path][0]
+            info_ann = tubelet_to_bbox(tubelet) 
+            info['annotations'] = info_ann
             
-            # TODO: confidence score thresholding
-    """
-            
-    if has_bbox:
-        for frame in frames:
-            image_path = os.path.splitext(os.path.basename(frame))[0]
-            bboxes = _get_bbox_info(image_path, annotation)
-            info['annotations'].append(bboxes)
-
     #info['annotations'] = _get_completed_annotations(info['annotations'])
     sample = (video, audio, info)
     return read_video_as_clip(sample, start_pts, end_pts, has_bbox)
 
+#------------------------------------------------------------------------------#
+
+# TODO: info는 tubelet으로 구성하기 
+def _set_info_annotation(dirname, annotation):
+    info_ann = []
+    frames = get_frames(dirname)
+    for frame in frames:
+        image_path = os.path.splitext(os.path.basename(frame))[0]
+        bboxes = _get_bbox_info(image_path, annotation)
+        info_ann.append(bboxes)
+    return info_ann
     
 def target_dataframe(path):
     import pandas as pd
@@ -108,7 +92,8 @@ def target_dataframe(path):
     df = df[df['person_id'].notnull()] # target 있는 imgpath만 선별
     return df
 
-    
+#------------------------------------------------------------------------------#
+
 def read_video_as_clip(sample, start_pts, end_pts, has_bbox, target=None):
     video, audio, info = sample
     video = video[start_pts:end_pts+1]
@@ -138,27 +123,47 @@ def read_video_timestamps(dirname):
 
 
 def _get_bbox_info(image_path, annotation, target_actions=[]):
-    """ Get all bboxes and actions in an image path """
+    """ Given a image path and target actions, 
+        Return all bboxes in a video clip """
     df = annotation
     
     if 'flow' in image_path:
         image_path = image_path.replace('_flow', '')
-        
+    
+    # get all person annotations in a image path
     rows = df[df['image_path']==image_path]
-    assert len(rows) > 0, image_path
+    if len(rows) == 0:
+        print("{} has no bounding box".format(image_path))
+        return {}
     
     box_dict = {}
     for row in rows.values:
         _, _, label, person_id, x1, y1, x2, y2 = row
         
+        # exclude non-target action
         if len(target_actions) > 0:
             if label not in target_actions:
                 continue
         box_dict[person_id] = [[x1, y1, x2, y2], label]
     return box_dict
 
-################################################################################
-
+def tubelet_to_bbox(tubelet, form='xywh'):
+    """ Convert tubelet to bbox dict similar to _get_bbox_info """
+    info_ann=[]
+    len_tube = len(tubelet[list(tubelet.keys())[0]][0])
+    for i in range(len_tube):
+        box_dict = {}
+        for pid, tube in tubelet.items():
+            bbox, label = tube
+            if form == 'xywh':
+                x1, y1, w, h = bbox[i]
+                x2 = w+x1
+                y2 = h+y1
+            elif form == 'xyxy':
+                x1, y1, x2, y2 = bbox[i]
+            box_dict[pid] = [[x1, y1, x2, y2], label]
+        info_ann.append(box_dict)
+    return info_ann
 
 def _get_action_name(fname, person_id, annotation):
     """ return action label from data frame """
@@ -208,22 +213,269 @@ def _get_person_ids(annotations):
                 person_ids.append(person_id)
     return sorted(person_ids)
 
-def _get_completed_annotations(annotations):
-    """Grab only completed annotations throughout the video clip"""
-    person_ids = _get_person_ids(annotations)
-    for person_id in person_ids:
+
+def _get_action_tubelet(info):
+    person_ids = info[0].keys()
+    labels = {k: v[1] for k,v in info[0].items()}
+    persons = {pid: [] for pid in person_ids}
+    
+    for iidx in info:
         
-        if all([person_id in ann.keys() for ann in annotations]):
+        for pid in person_ids:
+            bbox, _ = iidx[pid]
+            persons[pid].append(bbox)
+    
+    return {pid: [persons[pid], labels[pid]] for pid in person_ids}
+
+
+def _get_action_tubelet_w_detection(video_path, info_ann, detection):
+    df_tmp = detection
+    gt_tubelets = _get_action_tubelet(info_ann)
+    row = df_tmp[df_tmp['video_path'] == video_path]
+    
+    # nan 너무 많으면 버리기.
+    row = drop_non_target(row)
+    dt_tubelets = get_all_tubelets(row)#allocate_iou_coco(row)
+    dt_tubelets_dict = {}
+    
+    for tid, tubelet in enumerate(np.transpose(dt_tubelets, (1,0,2))):
+        empty_count = (np.count_nonzero(tubelet == np.zeros(4,))/4)
+        if  empty_count* 2 > len(tubelet):
             continue
+            
+        tubelet = calc_roi(tubelet, smoothing='linear')
+        ious_3d = [bb_intersection_over_union_3d(
+            gt_tubelets[pid][0], tubelet, forA='xyxy', forB='xywh') 
+                   for pid in gt_tubelets.keys()]
+        ious_3d_mean = [np.mean(bb_intersection_over_union_3d(
+            gt_tubelets[pid][0], tubelet, forA='xyxy', forB='xywh')) 
+                        for pid in gt_tubelets.keys()]
         
-        # pop from each annotations
-        for ann in annotations:
-            if person_id in ann.keys():
-                ann.pop(person_id)
-    return annotations
+        if max(ious_3d_mean) == 0:
+            continue
+        else:
+            pid_new = list(gt_tubelets.keys())[np.argmax(ious_3d_mean)]
+            
+            dt_tubelets_dict[tid] = [[], '']
+            dt_tubelets_dict[tid][0] = tubelet.tolist()
+            dt_tubelets_dict[tid][1] = gt_tubelets[pid_new][1]
+    return dt_tubelets_dict
+    
+#---------------------------------------------------------------------------------#
+# With 2D Person Detector
+
+def drop_non_target(row):
+    '''Drop non target from ground truth'''
+    
+    num_frames = len(row['image_path'].drop_duplicates())
+    pids = row['person_id'].drop_duplicates().values
+    pids = [pid for pid in pids 
+            if (row['person_id']==pid).value_counts()[1] > int(num_frames/2)]
+    return row[row['person_id'].isin(pids)]
+
+# TODO: switch to another temporal smoothing method
+
+def calc_roi(rois, smoothing=None):
+
+    buffer = rois  
+    if smoothing == 'sma':
+        buffer = moving_average(buffer, 4)
+    elif smoothing == 'linear':
+        buffer = np.array([[np.nan]*4 if np.max(roi) == 0. else roi for roi in buffer])
+        buffer = interpolate_nan(buffer)
+    return buffer
+
+
+def moving_average(rois, period):
+    buffer = np.zeros((len(rois), 4), dtype=int)
+    for n, signal in enumerate(np.array(rois).T):
+        for i in range(len(signal)):
+            if i < period:
+                buffer[i][n]=signal[i]
+            else:
+                buffer[i][n]=int(np.round(signal[i-period:i].mean()))
+    return buffer
+
+
+def interpolate_nan(rois):
+    buffer = np.zeros_like(np.array(rois))
+    for axis, y in enumerate(np.array(rois).T):
+        nans, x= nan_helper(y)
+        y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+        buffer[:,axis] = y
+    return buffer
+
+def nan_helper(y):
+    return np.isnan(y), lambda z: z.nonzero()[0]
+
+
+def bb_intersection_over_union(boxA, boxB, forA='xywh', forB='xywh'):
+    if forA == 'xyxy':
+        x11, y11, x2, y2 = boxA
+        w1, h1 = x2-x11, y2-y11
+    else:
+        x11, y11, w1, h1 = boxA
+    
+    if forB == 'xyxy':
+        x21, y21, x2, y2 = boxB
+        w2, h2 = x2-x21, y2-y21
+    else:
+        x21, y21, w2, h2 = boxB
+        
+    x12, y12 = x11+w1, y11+h1
+    x22, y22 = x21+w2, y21+h2
+    xA = np.maximum(x11, np.transpose(x21))
+    yA = np.maximum(y11, np.transpose(y21))
+    xB = np.minimum(x12, np.transpose(x22))
+    yB = np.minimum(y12, np.transpose(y22))
+    interArea = np.maximum((xB - xA + 1), 0) * np.maximum((yB - yA + 1), 0)
+    boxAArea = (x12 - x11 + 1) * (y12 - y11 + 1)
+    boxBArea = (x22 - x21 + 1) * (y22 - y21 + 1)
+    iou = interArea / (boxAArea + np.transpose(boxBArea) - interArea)
+    
+    #print(boxAArea, boxBArea, interArea, iou)
+    # return the intersection over union value
+    return iou
+
+
+def bb_intersection_over_union_3d(boxes0, boxes1, forA, forB, thres=0.2):
+    assert len(boxes0) == len(boxes1), print(len(boxes0), len(boxes1))
+    ious = []
+    for fid in range(len(boxes0)):
+        iou = bb_intersection_over_union(boxes0[fid], boxes1[fid], forA, forB)
+        ious.append(iou)
+    if np.mean(ious) < thres:
+        ious = [0] * len(boxes0)
+    return ious
+
+
+def get_all_tubelets(row, thres = 0.2):
+    
+    image_ids          = row['image_id'].drop_duplicates().values
+    num_max_detections = np.max(row['image_id'].value_counts())
+    num_frames         = len(image_ids)
+    tubelet_np         = np.zeros((num_frames, num_max_detections, 4))
+
+    for i, iid in enumerate(image_ids):
+
+        def get_last_bbox(tubelet_np):
+            """ Get the last non-empty bbox of each person detections """
+            last_bboxes = np.zeros_like(tubelet_np[0])
+            for pid, person in enumerate(np.transpose(tubelet_np, (1, 0, 2))):
+                sh = person[0].shape
+                bbox = [p for p in person[::] if not np.all(p == np.zeros(sh))]
+                last_bboxes[pid] = np.array(bbox[0]) if len(bbox) > 0 else np.zeros(sh)
+            return last_bboxes
+
+        def get_indices(ious_per_frame, thres):
+            """ Get indices with a maxiou """
+            a = np.array(ious_per_frame)
+            mask = np.logical_and(a == a.max(axis=0) , (a > thres))
+            a[mask]=1
+            a[~mask]=0
+            return np.array([np.argmax(row) if np.max(row) > 0. else np.nan for row in a])
+
+        detections = row[row['image_id'] == iid]
+        # init
+        if i == 0: 
+            for pid, person in enumerate(detections.values):
+                x, y, w, h = person[2:6]
+                tubelet_np[i][pid] = np.array([x,y,w,h])
+        else:
+            ious_per_frame = np.zeros((num_max_detections, num_max_detections))
+            last_boxes = get_last_bbox(tubelet_np)
+
+            ## to calc ious
+            for pid, person in enumerate(detections.values):
+                x, y, w, h = person[2:6]
+                ious = [bb_intersection_over_union(last_box, [x, y, w, h]) for last_box in last_boxes]
+                ious_per_frame[pid] = np.array(ious)
+            indices = get_indices(ious_per_frame, thres)
+
+            ## allocate person
+            for pid, person in enumerate(detections.values):
+                pid_new = indices[pid]
+                x, y, w, h = person[2:6]
+
+                if pid_new is not np.nan:
+                    try:
+                        tubelet_np[i][int(indices[pid])] = np.array([x,y,w,h])
+                    except:
+                        tubelet_np[i][int(pid)] = np.array([x,y,w,h])
+    return tubelet_np
+
+
+
+#---------------------------------------------------------------------------------## Visualization
+
+def visualize_bbox(video, tubelets, form='xyxy', label='person', color='black'):
+    import matplotlib.patches as patches
+
+    for fi, img in enumerate(video):
+        fig, ax = plt.subplots(1, figsize=(10,7))
+        ax.imshow(img)
+        ax.axis('off')
+
+        for k, v in tubelets.items():
+            if form == 'xyxy':
+                x, y, x2, y2 = v[0][fi]
+                w = x2-x
+                h = x2-y
+            elif form == 'xywh':
+                x, y, w, h = v[0][fi]
+            rect = patches.Rectangle((x,y), w, h, linewidth=3, edgecolor=color, facecolor='none')
+            ax.annotate('{}{}'.format(label,k), (x+40, y-15), color='white', 
+                    fontsize=10, ha='center', va='top',
+                    bbox=dict(boxstyle="square", fc="black"))
+            ax.add_patch(rect)
+    return
+
+def visualize_bbox_result(video, tubelets_gt, tubelets_det, 
+                          form_gt='xyxy', form_det='xywh'):
+    import matplotlib.patches as patches
+
+    for fi, img in enumerate(video):
+        fig, ax = plt.subplots(1, figsize=(10,7))
+        ax.imshow(img)
+        ax.axis('off')
+
+        for k, v in tubelets_gt.items():
+            if form_gt == 'xyxy':
+                x, y, x2, y2 = v[0][fi]
+                w = x2-x
+                h = x2-y
+            elif form_gt == 'xywh':
+                x, y, w, h = v[0][fi]
+            rect = patches.Rectangle((x,y), w, h, linewidth=3, edgecolor='red', facecolor='none')
+            ax.annotate('ground_truth{}'.format(k), (x+40, y-15), color='white', 
+                    fontsize=10, ha='center', va='top',
+                    bbox=dict(boxstyle="square", fc="black"))
+            ax.annotate('GT:{}'.format(v[1]), (x+40, y+h-15), color='black', 
+                    fontsize=10, ha='center', va='top',
+                    bbox=dict(boxstyle="square", fc="white"))
+            ax.add_patch(rect)
+            
+        for k, v in tubelets_det.items():
+            if form_det == 'xyxy':
+                x, y, x2, y2 = v[0][fi]
+                w = x2-x
+                h = x2-y
+            elif form_det == 'xywh':
+                x, y, w, h = v[0][fi]
+            rect = patches.Rectangle((x,y), w, h, linewidth=2, edgecolor='cyan', facecolor='none')
+            ax.annotate('detection{}'.format(k), (x+40, y+15), color='white', 
+                    fontsize=10, ha='center', va='bottom',
+                    bbox=dict(boxstyle="square", fc="black"))
+            ax.annotate('Result:{}'.format(v[1]), (x+40, y+h+15), color='black', 
+                    fontsize=10, ha='center', va='bottom',
+                    bbox=dict(boxstyle="square", fc="white"))
+            ax.add_patch(rect)
+    return
+
+#-----------------------------------------------------------------------#
 
 def _get_target_annotations(annotations, target):
-    """Grab only completed annotations throughout the video clip"""
+    """Grab only targeted annotations throughout the video clip"""
     
     info_new = []
     for ann in annotations:
@@ -233,100 +485,3 @@ def _get_target_annotations(annotations, target):
                 ann_new[person_id] = ann[person_id]
         info_new.append(ann_new)
     return info_new
-
-'''
-def create_new_dataframe(dirname):
-    import json
-    from natsort import natsorted
-    import pandas as pd
-    
-    info = {'annotations': []}
-    
-    fname = os.path.basename(dirname)
-    jsonfiles = natsorted(glob(os.path.join(dirname, '*.json')))
-
-    for jsonfile in jsonfiles:
-        bboxes = _get_bounding_box(fname, jsonfile, bbox_type='labelme')
-        info['annotations'].append(bboxes)
-        
-    info['annotations'] = _get_completed_annotations(info['annotations'])
-    
-    vids = []
-    frame_names = []
-    labels = []
-    peson_ids = []
-    x1s = []
-    y1s = []
-    x2s = []
-    y2s = []
-
-    for phase in ['train', 'val', 'test']:
-
-        for dirname in tqdm(glob('./data/images_new/{}/*'.format(phase))[:]):
-
-            info = read_video(dirname, has_bbox=True)
-            fname = os.path.basename(dirname)
-            vid = int(fname.split('_')[0])
-            jsonfiles = natsorted(glob(os.path.join(dirname, '*.json')))
-
-            for aidx, ann in enumerate(info['annotations']):
-                for key, value in ann.items():
-                    person_id = key
-                    x1, y1, x2, y2 = value[0]
-                    label = value[1]
-                    frame_name = os.path.splitext(os.path.basename(jsonfiles[aidx]))[0]
-
-                    vids.append(vid)
-                    frame_names.append(frame_name)
-                    labels.append(label)
-                    peson_ids.append(person_id)
-                    x1s.append(x1)
-                    y1s.append(y1)
-                    x2s.append(x2)
-                    y2s.append(y2)
-                    
-    
-    li = [frame_names, labels, peson_ids, x1s, y1s, x2s, y2s]
-    df = pd.DataFrame(vids, columns = ['video_id'])
-    for cid, column in enumerate(['image_path', 'action', 'person_id', 'x1', 'y1', 'x2', 'y2']):
-        df[column] = li[cid]
-'''
-'''
-def preprocess_keypoints(dirname, item, df=target_dataframe()):
-    fname = dirname.split('/')[-1]
-    label = dirname.split('/')[-2]
-    frames = get_frames(dirname)
-    
-    people = item['people']
-    npeople = np.array(people).shape[0]
-    torso = item['torso']
-    tidxs = df[df['imgpath']==fname]['targets'].values # target idx
-    if len(tidxs) == 0:
-        print("{} target index not exists".format(dirname))
-        return [] 
-    else: 
-        tidxs = tidxs[0]
-
-    #class = df[df['imgpath']==fname]['class'].values[0] # label 
-    tidxs = [int(t) for t in tidxs.strip().split(',')]
-    nidxs = list(range(npeople))
-    nidxs = [int(n) for n in nidxs if n not in tidxs]
-    ## appending clean
-    for tidx in tidxs:
-        start=0
-        end=start+len(frames)
-
-        if len(frames) != len(people[tidx][start:end]):
-            print("<{}> coords difference of people {}"
-                      .format(fname, len(people[tidx]), len(frames), tidx))
-            print(people[tidx])
-            continue
-
-        coords = {'people':people[tidx][start:end],
-                  'torso':torso[tidx][start:end]}
-#         else: ## TODO: change 224 to image shape
-#             coords = {'people': [[0, 0, 224, 224] for i in range(start, end)],
-#                       'torso':torso[tidx][start:end]}
-            
-    return coords
-'''
