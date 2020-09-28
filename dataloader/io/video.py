@@ -138,16 +138,16 @@ def _get_bbox_info(image_path, annotation, target_actions=[]):
     
     box_dict = {}
     for row in rows.values:
-        _, _, label, person_id, x1, y1, x2, y2 = row
+        _, _, _, label, person_id, x1, y1, w, h = row
         
         # exclude non-target action
         if len(target_actions) > 0:
             if label not in target_actions:
                 continue
-        box_dict[person_id] = [[x1, y1, x2, y2], label]
+        box_dict[person_id] = [[x1, y1, w, h], label]
     return box_dict
 
-def tubelet_to_bbox(tubelet, form='xywh'):
+def tubelet_to_bbox(tubelet):
     """ Convert tubelet to bbox dict similar to _get_bbox_info """
     info_ann=[]
     len_tube = len(tubelet[list(tubelet.keys())[0]][0])
@@ -155,13 +155,8 @@ def tubelet_to_bbox(tubelet, form='xywh'):
         box_dict = {}
         for pid, tube in tubelet.items():
             bbox, label = tube
-            if form == 'xywh':
-                x1, y1, w, h = bbox[i]
-                x2 = w+x1
-                y2 = h+y1
-            elif form == 'xyxy':
-                x1, y1, x2, y2 = bbox[i]
-            box_dict[pid] = [[x1, y1, x2, y2], label]
+            x1, y1, w, h = bbox[i]
+            box_dict[pid] = [[x1, y1, w, h], label]
         info_ann.append(box_dict)
     return info_ann
 
@@ -229,13 +224,15 @@ def _get_action_tubelet(info):
 
 
 def _get_action_tubelet_w_detection(video_path, info_ann, detection):
+    
+    video_path = os.path.basename(video_path)
     df_tmp = detection
     gt_tubelets = _get_action_tubelet(info_ann)
     row = df_tmp[df_tmp['video_path'] == video_path]
     
     # nan 너무 많으면 버리기.
     row = drop_non_target(row)
-    dt_tubelets = get_all_tubelets(row)#allocate_iou_coco(row)
+    dt_tubelets = get_all_tubelets(row) #allocate_iou_coco(row)
     dt_tubelets_dict = {}
     
     for tid, tubelet in enumerate(np.transpose(dt_tubelets, (1,0,2))):
@@ -244,14 +241,12 @@ def _get_action_tubelet_w_detection(video_path, info_ann, detection):
             continue
             
         tubelet = calc_roi(tubelet, smoothing='linear')
-        ious_3d = [bb_intersection_over_union_3d(
-            gt_tubelets[pid][0], tubelet, forA='xyxy', forB='xywh') 
+        ious_3d = [bb_intersection_over_union_3d(gt_tubelets[pid][0], tubelet)
                    for pid in gt_tubelets.keys()]
-        ious_3d_mean = [np.mean(bb_intersection_over_union_3d(
-            gt_tubelets[pid][0], tubelet, forA='xyxy', forB='xywh')) 
+        ious_3d_mean = [np.mean(bb_intersection_over_union_3d(gt_tubelets[pid][0], tubelet))
                         for pid in gt_tubelets.keys()]
         
-        if max(ious_3d_mean) == 0:
+        if len(ious_3d_mean) < 1 or max(ious_3d_mean) == 0:
             continue
         else:
             pid_new = list(gt_tubelets.keys())[np.argmax(ious_3d_mean)]
@@ -309,19 +304,9 @@ def nan_helper(y):
     return np.isnan(y), lambda z: z.nonzero()[0]
 
 
-def bb_intersection_over_union(boxA, boxB, forA='xywh', forB='xywh'):
-    if forA == 'xyxy':
-        x11, y11, x2, y2 = boxA
-        w1, h1 = x2-x11, y2-y11
-    else:
-        x11, y11, w1, h1 = boxA
-    
-    if forB == 'xyxy':
-        x21, y21, x2, y2 = boxB
-        w2, h2 = x2-x21, y2-y21
-    else:
-        x21, y21, w2, h2 = boxB
-        
+def bb_intersection_over_union(boxA, boxB):
+    x11, y11, w1, h1 = boxA
+    x21, y21, w2, h2 = boxB
     x12, y12 = x11+w1, y11+h1
     x22, y22 = x21+w2, y21+h2
     xA = np.maximum(x11, np.transpose(x21))
@@ -338,11 +323,11 @@ def bb_intersection_over_union(boxA, boxB, forA='xywh', forB='xywh'):
     return iou
 
 
-def bb_intersection_over_union_3d(boxes0, boxes1, forA, forB, thres=0.2):
+def bb_intersection_over_union_3d(boxes0, boxes1, thres=0.2):
     assert len(boxes0) == len(boxes1), print(len(boxes0), len(boxes1))
     ious = []
     for fid in range(len(boxes0)):
-        iou = bb_intersection_over_union(boxes0[fid], boxes1[fid], forA, forB)
+        iou = bb_intersection_over_union(boxes0[fid], boxes1[fid])
         ious.append(iou)
     if np.mean(ious) < thres:
         ious = [0] * len(boxes0)
@@ -376,26 +361,27 @@ def get_all_tubelets(row, thres = 0.2):
             return np.array([np.argmax(row) if np.max(row) > 0. else np.nan for row in a])
 
         detections = row[row['image_id'] == iid]
+        columns    = ['x1','y1','w','h'] 
         # init
         if i == 0: 
-            for pid, person in enumerate(detections.values):
-                x, y, w, h = person[2:6]
+            for pid, person in enumerate(detections[columns].values):
+                x, y, w, h = person
                 tubelet_np[i][pid] = np.array([x,y,w,h])
         else:
             ious_per_frame = np.zeros((num_max_detections, num_max_detections))
             last_boxes = get_last_bbox(tubelet_np)
 
             ## to calc ious
-            for pid, person in enumerate(detections.values):
-                x, y, w, h = person[2:6]
+            for pid, person in enumerate(detections[columns].values):
+                x, y, w, h = person
                 ious = [bb_intersection_over_union(last_box, [x, y, w, h]) for last_box in last_boxes]
                 ious_per_frame[pid] = np.array(ious)
             indices = get_indices(ious_per_frame, thres)
 
             ## allocate person
-            for pid, person in enumerate(detections.values):
+            for pid, person in enumerate(detections[columns].values):
                 pid_new = indices[pid]
-                x, y, w, h = person[2:6]
+                x, y, w, h = person
 
                 if pid_new is not np.nan:
                     try:
@@ -408,8 +394,9 @@ def get_all_tubelets(row, thres = 0.2):
 
 #---------------------------------------------------------------------------------## Visualization
 
-def visualize_bbox(video, tubelets, form='xyxy', label='person', color='black'):
+def visualize_bbox(video, tubelets, label='person', color='black'):
     import matplotlib.patches as patches
+    import matplotlib.pyplot as plt
 
     for fi, img in enumerate(video):
         fig, ax = plt.subplots(1, figsize=(10,7))
@@ -417,12 +404,7 @@ def visualize_bbox(video, tubelets, form='xyxy', label='person', color='black'):
         ax.axis('off')
 
         for k, v in tubelets.items():
-            if form == 'xyxy':
-                x, y, x2, y2 = v[0][fi]
-                w = x2-x
-                h = x2-y
-            elif form == 'xywh':
-                x, y, w, h = v[0][fi]
+            x, y, w, h = v[0][fi]
             rect = patches.Rectangle((x,y), w, h, linewidth=3, edgecolor=color, facecolor='none')
             ax.annotate('{}{}'.format(label,k), (x+40, y-15), color='white', 
                     fontsize=10, ha='center', va='top',
@@ -430,45 +412,37 @@ def visualize_bbox(video, tubelets, form='xyxy', label='person', color='black'):
             ax.add_patch(rect)
     return
 
-def visualize_bbox_result(video, tubelets_gt, tubelets_det, 
-                          form_gt='xyxy', form_det='xywh'):
+def visualize_bbox_result(video, tubelets_gt, tubelets_det, annot=True):
     import matplotlib.patches as patches
-
+    import matplotlib.pyplot as plt
+    
     for fi, img in enumerate(video):
         fig, ax = plt.subplots(1, figsize=(10,7))
         ax.imshow(img)
         ax.axis('off')
 
         for k, v in tubelets_gt.items():
-            if form_gt == 'xyxy':
-                x, y, x2, y2 = v[0][fi]
-                w = x2-x
-                h = x2-y
-            elif form_gt == 'xywh':
-                x, y, w, h = v[0][fi]
+            x, y, w, h = v[0][fi]
             rect = patches.Rectangle((x,y), w, h, linewidth=3, edgecolor='red', facecolor='none')
-            ax.annotate('ground_truth{}'.format(k), (x+40, y-15), color='white', 
-                    fontsize=10, ha='center', va='top',
-                    bbox=dict(boxstyle="square", fc="black"))
-            ax.annotate('GT:{}'.format(v[1]), (x+40, y+h-15), color='black', 
-                    fontsize=10, ha='center', va='top',
-                    bbox=dict(boxstyle="square", fc="white"))
+            if annot:
+                ax.annotate('ground_truth{}'.format(k), (x+40, y-15), color='white', 
+                        fontsize=10, ha='center', va='top',
+                        bbox=dict(boxstyle="square", fc="black"))
+                ax.annotate('GT:{}'.format(v[1]), (x+40, y+h-15), color='black', 
+                        fontsize=10, ha='center', va='top',
+                        bbox=dict(boxstyle="square", fc="white"))
             ax.add_patch(rect)
             
         for k, v in tubelets_det.items():
-            if form_det == 'xyxy':
-                x, y, x2, y2 = v[0][fi]
-                w = x2-x
-                h = x2-y
-            elif form_det == 'xywh':
-                x, y, w, h = v[0][fi]
+            x, y, w, h = v[0][fi]
             rect = patches.Rectangle((x,y), w, h, linewidth=2, edgecolor='cyan', facecolor='none')
-            ax.annotate('detection{}'.format(k), (x+40, y+15), color='white', 
-                    fontsize=10, ha='center', va='bottom',
-                    bbox=dict(boxstyle="square", fc="black"))
-            ax.annotate('Result:{}'.format(v[1]), (x+40, y+h+15), color='black', 
-                    fontsize=10, ha='center', va='bottom',
-                    bbox=dict(boxstyle="square", fc="white"))
+            if annot:
+                ax.annotate('detection{}'.format(k), (x+40, y+15), color='white', 
+                        fontsize=10, ha='center', va='bottom',
+                        bbox=dict(boxstyle="square", fc="black"))
+                ax.annotate('Result:{}'.format(v[1]), (x+40, y+h+15), color='black', 
+                        fontsize=10, ha='center', va='bottom',
+                        bbox=dict(boxstyle="square", fc="white"))
             ax.add_patch(rect)
     return
 

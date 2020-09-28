@@ -274,9 +274,7 @@ class HandHygiene(VisionDataset):
         bboxes = []
         for i in info['annotations']:
             bbox, _ = i[person_id]
-            x1, y1, x2, y2 = bbox
-            w = x2 - x1
-            h = y2 - y1
+            x1, y1, w, h = bbox
             bboxes.append([x1, y1, w, h])
 
         if self.args.crop_upper:
