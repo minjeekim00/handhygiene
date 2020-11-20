@@ -43,6 +43,7 @@ class LoopPadding(object):
     def randomize_parameters(self):
         pass
 
+
 class MirrorPadding(LoopPadding):
     
     def __init__(self, size, num=None):
@@ -77,6 +78,7 @@ class MirrorLoopPadding(LoopPadding):
         return list(reversed(li))[1:] if i == 0 or i/2 == 1 else li
     
     
+    
 
 class TemporalBeginCrop(object):
     """Temporally crop the given frame indices at a beginning.
@@ -95,7 +97,7 @@ class TemporalBeginCrop(object):
     
     def randomize_parameters(self):
         pass
-   
+    
     
 
 class TemporalCenterCrop(object):
@@ -123,7 +125,7 @@ class TemporalCenterCrop(object):
 
         video = video[int(begin_index):int(end_index)]
         return video
- 
+    
     def randomize_parameters(self):
         pass
     
@@ -168,6 +170,7 @@ class TemporalRandomCrop(object):
     
 class RandomTransforms(object):
     """Base class for a list of transformations with randomness
+
     Args:
         transforms (list or tuple): list of transformations
     """
@@ -194,6 +197,7 @@ class RandomTransforms(object):
     
 class TemporalRandomApply(RandomTransforms):
     """Apply randomly a list of transformations with a given probability
+
     Args:
         transforms (list or tuple): list of transformations
         p (float): probability
@@ -224,11 +228,11 @@ class TemporalRandomApply(RandomTransforms):
 class TemporalRandomChoice(RandomTransforms):
     """Apply single transformation randomly picked from a list
     """
- 
+    
     def __call__(self, video):
         t = random.choice(self.transforms)
         #print(str(t))
         #logging.info(str(t))
         return t(video)
 
-
+   

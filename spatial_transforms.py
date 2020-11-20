@@ -527,6 +527,7 @@ class ColorJitter(object):
         return transform
 
     def __call__(self, img):
+        random.seed(self.seed)
         transform = self.get_params(self.brightness, self.contrast,
                                     self.saturation, self.hue)
         return transform(img)
@@ -557,6 +558,7 @@ class RandomRotation(object):
         return angle
 
     def __call__(self, img):
+        random.seed(self.seed)
         angle = self.get_params(self.degrees)
         return img.rotate(angle, self.resample, self.expand, self.center)
     
@@ -612,6 +614,7 @@ class RandomAffine(object):
     @staticmethod
     def get_params(degrees, translate, scale_ranges, shears, img_size):
         """Get parameters for affine transformation
+
         Returns:
             sequence: params to be passed to the affine transformation
         """
@@ -695,3 +698,4 @@ class ExtractSkinColor(object):
 
     def randomize_parameters(self):
         pass
+        
